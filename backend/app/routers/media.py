@@ -9,6 +9,7 @@ import httpx
 
 logger = logging.getLogger(__name__)
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from fastapi.responses import StreamingResponse, Response
 
 from app import jellyfin as jf
 from app.dependencies import get_current_user
@@ -24,6 +25,18 @@ def _require_jf_token(x_jellyfin_token: str | None = Header(default=None)) -> st
             detail="Jellyfin token missing (X-Jellyfin-Token header)",
         )
     return x_jellyfin_token
+
+
+def _hls_auth_headers() -> dict:
+    """Server-side auth header for proxying HLS manifests/segments."""
+    from app.config import settings
+
+    return {
+        "X-Emby-Authorization": (
+            f'MediaBrowser Client="VOD Platform", Device="Proxy", '
+            f'DeviceId="vod-backend", Version="1.0.0", Token="{settings.JELLYFIN_API_KEY}"'
+        ),
+    }
 
 
 @router.get("/latest")
@@ -121,17 +134,273 @@ async def get_item(
 @router.get("/stream-url/{item_id}")
 async def get_stream_url(
     item_id: str,
+    audio_stream_index: int | None = Query(default=None),
     jf_token: str = Depends(_require_jf_token),
     current_user: User = Depends(get_current_user),
 ) -> dict:
-    """Return the direct-stream URL for the player."""
+    """Return the direct-stream URL for the player.
+    Supports optional audio_stream_index to select a specific audio track.
+    """
     from app.config import settings
 
+    # Remove static=true so Jellyfin dynamically transcodes to a format
+    # the client supports — critical for mobile browsers that may not
+    # support codecs like H.265.
     stream_url = (
         f"{settings.JELLYFIN_SERVER_URL}/Videos/{item_id}/stream"
-        f"?static=true&api_key={jf_token}"
+        f"?api_key={jf_token}"
     )
-    return {"stream_url": stream_url, "item_id": item_id}
+    if audio_stream_index is not None:
+        stream_url += f"&AudioStreamIndex={audio_stream_index}"
+
+    return {"stream_url": stream_url, "item_id": item_id, "audio_stream_index": audio_stream_index}
+
+
+@router.get("/proxy-stream/{item_id}")
+async def proxy_video_stream(
+    item_id: str,
+    audio_stream_index: int | None = Query(default=None),
+    token: str | None = Query(default=None),
+    range_header: str | None = Header(default=None, alias="range"),
+):
+    """
+    Proxy video stream from Jellyfin through our backend.
+    Uses our own JWT token (passed as ?token=xxx query param) for authentication —
+    critical because <video> elements can't send custom headers.
+
+    This ensures mobile devices only need to reach our backend,
+    not the Jellyfin server directly.
+    Supports HTTP Range requests for seeking.
+    """
+    from app.config import settings
+    from app.security import decode_access_token
+
+    # Authenticate via our own JWT token (passed as ?token=xxx in query)
+    if not token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token required")
+
+    payload = decode_access_token(token)
+    if not payload:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+
+    # ── Build Jellyfin stream URL ───────────────────────────────────────
+    # Use Jellyfin's dynamic streaming endpoint (no static=true) so it can
+    # remux/transcode audio to AAC — browser-compatible for all files.
+    # static=true would serve the raw file as-is, breaking audio for files
+    # with unsupported audio codecs like AC3, DTS, TrueHD, etc.
+    # Auth via X-Emby-Authorization header (server API key).
+    stream_url = f"{settings.JELLYFIN_SERVER_URL}/Videos/{item_id}/stream"
+    params_list = ["AudioCodec=aac", "MaxAudioChannels=2"]
+    if audio_stream_index is not None:
+        params_list.append(f"AudioStreamIndex={audio_stream_index}")
+    stream_url += "?" + "&".join(params_list)
+
+    auth_headers = {
+        "X-Emby-Authorization": (
+            f'MediaBrowser Client="VOD Platform", Device="Proxy", '
+            f'DeviceId="vod-backend", Version="1.0.0", Token="{settings.JELLYFIN_API_KEY}"'
+        ),
+    }
+
+    # ── Pass through Range header for seeking ───────────────────────────
+    if range_header:
+        auth_headers["Range"] = range_header
+
+    # ── Stream directly from Jellyfin (no HEAD probe) ───────────────────
+    # The HEAD probe added a full round-trip on every seek — eliminated.
+    # Instead, send a streaming GET and read the response headers (status,
+    # Content-Type, Content-Range, Content-Length) from Jellyfin's actual
+    # response before piping the body through.
+    # This cuts seek latency in half: 1 round trip instead of 2.
+    client = httpx.AsyncClient(timeout=None)
+    try:
+        request = client.build_request("GET", stream_url, headers=auth_headers)
+        jellyfin_resp = await client.send(request, stream=True)
+
+        resp_status = jellyfin_resp.status_code
+        ct = jellyfin_resp.headers.get("content-type", "video/mp4")
+        cl = jellyfin_resp.headers.get("content-length")
+        cr = jellyfin_resp.headers.get("content-range")
+
+        if resp_status >= 400:
+            body = await jellyfin_resp.aread()
+            logger.error(
+                "Jellyfin stream error %s for item %s: %s",
+                resp_status, item_id, body[:500],
+            )
+            await client.aclose()
+            return Response(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                content="Stream unavailable from upstream server",
+            )
+
+        # Build response headers passing through key metadata from Jellyfin.
+        # Always advertise Accept-Ranges so the browser knows to send Range
+        # requests for seeking. Jellyfin's dynamic endpoint handles these
+        # correctly — it seeks in the source file and remuxes from the
+        # requested position, returning 206 with proper Content-Range.
+        response_headers = {"Accept-Ranges": "bytes"}
+        if cr:
+            response_headers["Content-Range"] = cr
+        if cl:
+            response_headers["Content-Length"] = cl
+
+        async def _stream():
+            try:
+                async for chunk in jellyfin_resp.aiter_bytes(chunk_size=262144):
+                    yield chunk
+            finally:
+                await client.aclose()
+
+        return StreamingResponse(
+            _stream(),
+            status_code=resp_status,
+            media_type=ct,
+            headers=response_headers,
+        )
+    except Exception:
+        await client.aclose()
+        raise
+
+
+@router.get("/hls/{item_id}/main.m3u8")
+async def get_hls_manifest(
+    item_id: str,
+    audio_stream_index: int | None = Query(default=None),
+    token: str | None = Query(default=None),
+):
+    """
+    Proxy Jellyfin's HLS manifest for an item.
+
+    HLS segments the media into small finite chunks, so seeking and resume
+    jump straight to the target segment instead of restarting a progressive
+    transcode from scratch (which is what made the old /proxy-stream endpoint
+    slow to seek/resume).
+
+    The returned manifest's segment URIs are rewritten to point back at our
+    own /segment proxy (carrying the JWT token) so the browser only ever
+    talks to our backend and never needs to reach Jellyfin directly.
+    """
+    import urllib.parse
+    import uuid
+
+    from app.config import settings
+    from app.security import decode_access_token
+
+    if not token or not decode_access_token(token):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+
+    params = {
+        "MediaSourceId": item_id,
+        "PlaySessionId": uuid.uuid4().hex,
+        "VideoCodec": "h264",
+        "AudioCodec": "aac",
+        "VideoBitrate": "8000000",
+        "AudioBitrate": "192000",
+        "MaxAudioChannels": "2",
+        "SegmentContainer": "ts",
+        "MinSegments": "1",
+        "BreakOnNonKeyFrames": "true",
+        "api_key": settings.JELLYFIN_API_KEY,
+    }
+    if audio_stream_index is not None:
+        params["AudioStreamIndex"] = str(audio_stream_index)
+
+    url = f"{settings.JELLYFIN_SERVER_URL}/Videos/{item_id}/main.m3u8"
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.get(url, params=params, headers=_hls_auth_headers())
+        if resp.status_code >= 400:
+            logger.error(
+                "HLS manifest error %s for item %s: %s",
+                resp.status_code, item_id, resp.text[:500],
+            )
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Could not load HLS manifest from upstream server",
+            )
+        manifest = resp.text
+
+    # Rewrite each segment URI to a relative path pointing at our segment
+    # proxy. Relative URIs resolve against the manifest URL
+    # (.../hls/{item_id}/main.m3u8) → .../hls/{item_id}/segment?...
+    out_lines: list[str] = []
+    for line in manifest.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            out_lines.append(line)
+            continue
+        encoded = urllib.parse.quote(stripped, safe="")
+        out_lines.append(f"segment?path={encoded}&token={token}")
+
+    body = "\n".join(out_lines) + "\n"
+    return Response(content=body, media_type="application/vnd.apple.mpegurl")
+
+
+@router.get("/hls/{item_id}/segment")
+async def get_hls_segment(
+    item_id: str,
+    path: str,
+    token: str | None = Query(default=None),
+    range_header: str | None = Header(default=None, alias="range"),
+):
+    """Proxy a single HLS segment (finite .ts file) through our backend."""
+    from app.config import settings
+    from app.security import decode_access_token
+
+    if not token or not decode_access_token(token):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+
+    # Resolve the segment URI (from the rewritten manifest) against Jellyfin.
+    # Our manifest only ever emits relative URIs, so we intentionally do NOT
+    # honor absolute http(s) paths here — that would be an SSRF vector letting
+    # a token holder proxy arbitrary internal URLs through the backend.
+    if path.startswith(("http://", "https://")):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid segment path")
+    if path.startswith("/"):
+        seg_url = f"{settings.JELLYFIN_SERVER_URL}{path}"
+    else:
+        seg_url = f"{settings.JELLYFIN_SERVER_URL}/Videos/{item_id}/{path}"
+
+    headers = _hls_auth_headers()
+    if range_header:
+        headers["Range"] = range_header
+
+    client = httpx.AsyncClient(timeout=None)
+    try:
+        request = client.build_request("GET", seg_url, headers=headers)
+        upstream = await client.send(request, stream=True)
+
+        if upstream.status_code >= 400:
+            body = await upstream.aread()
+            logger.error(
+                "HLS segment error %s for item %s: %s",
+                upstream.status_code, item_id, body[:300],
+            )
+            await client.aclose()
+            return Response(status_code=status.HTTP_502_BAD_GATEWAY, content="Segment unavailable")
+
+        media_type = upstream.headers.get("content-type", "video/mp2t")
+        response_headers = {}
+        for h in ("content-length", "content-range", "accept-ranges"):
+            if h in upstream.headers:
+                response_headers[h] = upstream.headers[h]
+
+        async def _stream():
+            try:
+                async for chunk in upstream.aiter_bytes(chunk_size=65536):
+                    yield chunk
+            finally:
+                await client.aclose()
+
+        return StreamingResponse(
+            _stream(),
+            status_code=upstream.status_code,
+            media_type=media_type,
+            headers=response_headers,
+        )
+    except Exception:
+        await client.aclose()
+        raise
 
 
 @router.get("/download-url/{item_id}")

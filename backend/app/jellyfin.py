@@ -6,6 +6,7 @@ Calls on behalf of a user use their Jellyfin AccessToken.
 from typing import Any
 
 import httpx
+from fastapi import HTTPException, status as http_status
 
 from app.config import settings
 
@@ -144,10 +145,22 @@ async def proxy_jellyfin(
     token: str,
     params: dict | None = None,
 ) -> Any:
-    """Forward a GET request to Jellyfin using the user's token."""
+    """Forward a GET request to Jellyfin using the user's token.
+
+    Returns the parsed JSON on success.  On 401/403 from Jellyfin the token
+    is assumed expired; we raise an HTTPException(401) so the frontend can
+    redirect to login.  Other non-2xx errors are raised as-is.
+    """
     url = f"{settings.JELLYFIN_SERVER_URL}/{endpoint.lstrip('/')}"
 
     async with httpx.AsyncClient(timeout=20) as client:
         resp = await client.get(url, headers=_user_headers(token), params=params or {})
+
+        if resp.status_code in (401, 403):
+            raise HTTPException(
+                status_code=http_status.HTTP_401_UNAUTHORIZED,
+                detail="Jellyfin session expired – please log in again",
+            )
+
         resp.raise_for_status()
         return resp.json()

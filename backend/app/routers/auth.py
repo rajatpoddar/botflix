@@ -1,5 +1,15 @@
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+
+
+# ── Helper: ensure timezone-naive DB values work with timezone-aware comparisons ──
+def _safe_compare(dt_a, dt_b):
+    """Make two datetimes compatible for comparison by stripping timezone from
+    both. This handles the case where one is naive (SQLite) and the other is
+    timezone-aware (PostgreSQL). Returns (dt_a, dt_b) both stripped of tz."""
+    def strip_tz(d):
+        return d.replace(tzinfo=None) if d and d.tzinfo is not None else d
+    return strip_tz(dt_a), strip_tz(dt_b)
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -59,7 +69,7 @@ async def register(payload: RegisterRequest, db: AsyncSession = Depends(get_db))
         )
 
     # Persist to our database — auto-start the 7-day free trial
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     user = User(
         email=payload.email,
         username=payload.username,
@@ -161,7 +171,7 @@ async def reset_password(
     if not user or not user.reset_token_expires:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid token")
 
-    if user.reset_token_expires < datetime.utcnow():
+    if user.reset_token_expires < datetime.now(timezone.utc):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Token has expired")
 
     # Update password locally
@@ -188,14 +198,16 @@ async def get_subscription(
     current_user: User = Depends(get_current_user),
 ) -> SubscriptionStatus:
     """Return the current user's subscription status and trial info."""
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     status = current_user.subscription_status or "trial"
 
     # If still in trial, check if 7 days have passed
     if status == "trial":
         if current_user.trial_started_at:
             trial_end = current_user.trial_started_at + timedelta(days=7)
-            if now > trial_end:
+            # Make compatible for comparison (handles naive vs aware datetime mismatch)
+            comp_now, comp_end = _safe_compare(now, trial_end)
+            if comp_now > comp_end:
                 # Trial expired — mark it
                 status = "expired"
         else:
@@ -206,10 +218,12 @@ async def get_subscription(
     days_remaining = None
     if status == "trial" and current_user.trial_started_at:
         trial_end = current_user.trial_started_at + timedelta(days=7)
-        remaining = (trial_end - now).days
+        _, comp_trial_end = _safe_compare(now, trial_end)
+        remaining = (comp_trial_end - now.replace(tzinfo=None)).days
         days_remaining = max(0, remaining)
     elif status == "active" and current_user.subscription_ends_at:
-        remaining = (current_user.subscription_ends_at - now).days
+        comp_sub_end, comp_now = _safe_compare(current_user.subscription_ends_at, now)
+        remaining = (comp_sub_end - comp_now).days
         days_remaining = max(0, remaining)
 
     return SubscriptionStatus(
@@ -232,7 +246,7 @@ async def start_trial(
             detail="Trial already started",
         )
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     current_user.trial_started_at = now
     current_user.subscription_status = "trial"
     await db.commit()
@@ -251,7 +265,7 @@ async def activate_subscription(
     current_user: User = Depends(get_current_user),
 ) -> SubscriptionStatus:
     """Mark subscription as active (would happen after payment)."""
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     current_user.subscription_status = "active"
     current_user.subscription_ends_at = now + timedelta(days=30)  # 1 month
     await db.commit()

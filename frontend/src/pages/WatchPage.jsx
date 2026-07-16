@@ -1,7 +1,23 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { mediaAPI } from '../lib/api'
 import VideoPlayer from '../components/player/VideoPlayer'
+
+/**
+ * Extract audio tracks from an item's MediaStreams array.
+ * Returns [{ index, language, displayTitle }] sorted by Index.
+ */
+function extractAudioTracks(item) {
+  if (!item?.MediaStreams) return []
+  return item.MediaStreams
+    .filter((s) => s.Type === 'Audio')
+    .sort((a, b) => (a.Index ?? 0) - (b.Index ?? 0))
+    .map((s) => ({
+      index: s.Index ?? 0,
+      language: s.Language || '',
+      displayTitle: s.DisplayTitle || `Audio ${(s.Index ?? 0) + 1}`,
+    }))
+}
 
 export default function WatchPage() {
   const { id } = useParams()
@@ -12,15 +28,18 @@ export default function WatchPage() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
   const [downloading, setDownloading] = useState(false)
+  // Track the current audio stream index (default = 0)
+  const [audioIndex, setAudioIndex] = useState(0)
 
   useEffect(() => {
     async function load() {
       try {
-        const [streamRes, itemRes] = await Promise.all([
-          mediaAPI.getStreamUrl(id),
-          mediaAPI.getItem(id),
-        ])
-        setStreamUrl(streamRes.data.stream_url)
+        // Use the HLS manifest URL — segmented streaming gives fast seeking
+        // and resume, proxied through our backend so mobile devices don't need
+        // direct access to the Jellyfin server.
+        const hlsUrl = mediaAPI.getHlsUrl(id, { audio_stream_index: 0 })
+        const itemRes = await mediaAPI.getItem(id)
+        setStreamUrl(hlsUrl)
         setItem(itemRes.data)
       } catch (err) {
         setError(err.response?.data?.detail || 'Could not load this title.')
@@ -29,6 +48,15 @@ export default function WatchPage() {
       }
     }
     load()
+  }, [id])
+
+  // Switch audio track — rebuild the HLS manifest URL with the selected
+  // AudioStreamIndex. The player re-seeks to currentPosition after reload.
+  const switchAudio = useCallback(async (index, currentPosition) => {
+    const hlsUrl = mediaAPI.getHlsUrl(id, { audio_stream_index: index })
+    setStreamUrl(hlsUrl)
+    setAudioIndex(index)
+    return hlsUrl
   }, [id])
 
   async function handleDownload() {
@@ -74,6 +102,9 @@ export default function WatchPage() {
     )
   }
 
+  // Extract audio tracks from item metadata
+  const audioTracks = extractAudioTracks(item)
+
   // Calculate resume position from UserData (if the item was partially watched).
   // If ?fresh=1 is present, override to 0 (start from beginning).
   const initialPosition = searchParams.get('fresh') === '1'
@@ -91,6 +122,10 @@ export default function WatchPage() {
           title={item?.Name}
           itemId={id}
           initialPosition={initialPosition}
+          durationFromMeta={item?.RunTimeTicks ? Math.floor(item.RunTimeTicks / 10_000_000) : undefined}
+          audioTracks={audioTracks}
+          activeAudioIndex={audioIndex}
+          onSwitchAudio={switchAudio}
           onBack={() => {
             if (window.history.length > 1) {
               navigate(-1)

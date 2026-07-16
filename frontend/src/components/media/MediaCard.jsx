@@ -51,6 +51,8 @@ export default function MediaCard({ item }) {
   function goToDetail() {
     if (item.Type === 'Series') {
       navigate(`/show/${item.Id}`)
+    } else if (item.Type === 'BoxSet') {
+      navigate(`/collection/${item.Id}`)
     } else {
       navigate(`/movie/${item.Id}`)
     }
@@ -58,7 +60,11 @@ export default function MediaCard({ item }) {
 
   function goToPlay(e) {
     e.stopPropagation()
-    navigate(`/watch/${item.Id}`)
+    if (item.Type === 'BoxSet') {
+      navigate(`/collection/${item.Id}`)
+    } else {
+      navigate(`/watch/${item.Id}`)
+    }
   }
 
   return (

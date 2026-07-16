@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import Hls from 'hls.js'
 import { mediaAPI } from '../../lib/api'
 
 function formatTime(seconds) {
@@ -16,18 +17,20 @@ function secToTicks(sec) {
   return Math.round(sec * 10_000_000)
 }
 
-/** Read audio tracks and text tracks from a <video> element */
-function getTracksFromVideo(videoEl) {
-  const audio = []
+/** Check if the user is on a mobile/touch device */
+function isMobile() {
+  return /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
+    || (navigator.maxTouchPoints > 0 && window.innerWidth < 1024)
+}
+
+/** Clamp a value between min and max */
+function clamp(val, min, max) {
+  return Math.min(max, Math.max(min, val))
+}
+
+/** Read text tracks from a <video> element (widely supported) */
+function getSubTracksFromVideo(videoEl) {
   const subs = []
-
-  if (videoEl.audioTracks) {
-    for (let i = 0; i < videoEl.audioTracks.length; i++) {
-      const t = videoEl.audioTracks[i]
-      audio.push({ id: t.id || String(i), label: t.label || `Audio ${i + 1}`, language: t.language, index: i })
-    }
-  }
-
   if (videoEl.textTracks) {
     for (let i = 0; i < videoEl.textTracks.length; i++) {
       const t = videoEl.textTracks[i]
@@ -36,24 +39,92 @@ function getTracksFromVideo(videoEl) {
       }
     }
   }
-
-  return { audio, subs }
+  return subs
 }
 
-export default function VideoPlayer({ src, title, onBack, onDownload, downloading, itemId, initialPosition }) {
+export default function VideoPlayer({
+  src,
+  title,
+  onBack,
+  onDownload,
+  downloading,
+  itemId,
+  initialPosition,
+  durationFromMeta,
+  audioTracks = [],
+  activeAudioIndex = 0,
+  onSwitchAudio,
+}) {
   const videoRef = useRef(null)
+  const videoWrapperRef = useRef(null)
   const containerRef = useRef(null)
   const controlsTimeout = useRef(null)
   const progressIntervalRef = useRef(null)
   const hasSeekedRef = useRef(false)
-  // Tracks the latest playback time so cleanup effects always send the
-  // correct position even if the video element is already detached.
   const lastPositionRef = useRef(0)
-  // Use refs for values needed in event callbacks to avoid stale closures
   const itemIdRef = useRef(itemId)
   const initialPositionRef = useRef(initialPosition)
+  const srcRef = useRef(src)
+  // Track audio switching state
+  const switchingAudioRef = useRef(false)
+  const pendingPositionRef = useRef(null)
+  const pendingPlayRef = useRef(false)
+  // Track auto-fullscreen to avoid loops
+  const autoFullscreenDoneRef = useRef(false)
+  // Track whether a touch gesture just happened (to prevent unwanted play/pause)
+  const wasGestureRef = useRef(false)
+  const gestureClearTimerRef = useRef(null)
+  // Holds the active hls.js instance (null when using native HLS)
+  const hlsRef = useRef(null)
+
   useEffect(() => { itemIdRef.current = itemId }, [itemId])
   useEffect(() => { initialPositionRef.current = initialPosition }, [initialPosition])
+  useEffect(() => { srcRef.current = src }, [src])
+
+  // ── Attach HLS (or native) source ──────────────────────────────────────────
+  // HLS lets seeking/resume jump to a segment instead of restarting a
+  // progressive transcode. hls.js drives Chrome/Firefox/Edge over MSE; Safari
+  // and iOS play the manifest natively.
+  useEffect(() => {
+    const v = videoRef.current
+    if (!v || !src) return
+
+    // Resume position: audio-switch pending pos takes priority, else the
+    // initial resume position from metadata.
+    const startPos = switchingAudioRef.current
+      ? (pendingPositionRef.current || 0)
+      : (initialPositionRef.current || 0)
+
+    const isHls = /\.m3u8(\?|$)/i.test(src)
+    const canPlayNativeHls = v.canPlayType('application/vnd.apple.mpegurl')
+
+    // Native HLS (Safari / iOS) or a plain progressive source
+    if (!isHls || canPlayNativeHls || !Hls.isSupported()) {
+      v.src = src
+      return
+    }
+
+    const hls = new Hls({
+      startPosition: startPos > 0 ? startPos : -1,
+      enableWorker: true,
+      maxBufferLength: 30,
+    })
+    hlsRef.current = hls
+    hls.loadSource(src)
+    hls.attachMedia(v)
+
+    hls.on(Hls.Events.ERROR, (_evt, data) => {
+      if (!data.fatal) return
+      if (data.type === Hls.ErrorTypes.NETWORK_ERROR) hls.startLoad()
+      else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) hls.recoverMediaError()
+      else hls.destroy()
+    })
+
+    return () => {
+      hls.destroy()
+      if (hlsRef.current === hls) hlsRef.current = null
+    }
+  }, [src])
 
   const [playing, setPlaying] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
@@ -65,12 +136,31 @@ export default function VideoPlayer({ src, title, onBack, onDownload, downloadin
   const [buffering, setBuffering] = useState(false)
   const [showVolume, setShowVolume] = useState(false)
 
-  // Tracks
-  const [audioTracks, setAudioTracks] = useState([])
+  // Brightness state (1.0 = normal, ranges 0.3–1.5)
+  const [brightness, setBrightness] = useState(1.0)
+  // Use RunTimeTicks fallback for duration when browser reports Infinity
+  const durationFromMetaRef = useRef(durationFromMeta)
+  useEffect(() => { durationFromMetaRef.current = durationFromMeta }, [durationFromMeta])
+
+  // Compute effective duration early — used by seek callback and render.
+  // Prefer browser-reported duration; fall back to metadata (RunTimeTicks).
+  const effectiveDuration = (duration && isFinite(duration) && duration > 0)
+    ? duration
+    : (durationFromMetaRef.current || 0)
+
+  // Touch gesture state
+  const touchStartRef = useRef(null)
+  const [gestureIndicator, setGestureIndicator] = useState(null) // { type: 'brightness'|'volume'|'seek', value: number }
+  const gestureIndicatorTimeout = useRef(null)
+  // Seek gesture state
+  const seekGestureRef = useRef(null) // { startCurrentTime, startClientX }
+
+  // Tracks — audio from props, subs from video element
   const [subTracks, setSubTracks] = useState([])
-  const [activeAudio, setActiveAudio] = useState(null)
   const [activeSub, setActiveSub] = useState(null) // null = off
   const [showTrackMenu, setShowTrackMenu] = useState(false) // 'audio' | 'sub' | false
+
+  const mobile = isMobile()
 
   // ── Playback ──────────────────────────────────────────────────────────────
 
@@ -82,11 +172,13 @@ export default function VideoPlayer({ src, title, onBack, onDownload, downloadin
 
   const seek = useCallback((e) => {
     const v = videoRef.current
-    if (!v || !duration) return
+    const dur = effectiveDuration
+    if (!v || !dur) return
     const rect = e.currentTarget.getBoundingClientRect()
-    const ratio = (e.clientX - rect.left) / rect.width
-    v.currentTime = ratio * duration
-  }, [duration])
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX
+    const ratio = (clientX - rect.left) / rect.width
+    v.currentTime = ratio * dur
+  }, [effectiveDuration])
 
   const handleVolumeChange = useCallback((e) => {
     const v = videoRef.current
@@ -113,17 +205,154 @@ export default function VideoPlayer({ src, title, onBack, onDownload, downloadin
     }
   }, [])
 
-  // ── Track switching ───────────────────────────────────────────────────────
+  // ── Auto-fullscreen on mobile ─────────────────────────────────────────────
 
-  const switchAudio = useCallback((index) => {
-    const v = videoRef.current
-    if (!v?.audioTracks) return
-    for (let i = 0; i < v.audioTracks.length; i++) {
-      v.audioTracks[i].enabled = i === index
+  const enterFullscreen = useCallback(async () => {
+    if (!containerRef.current) return
+    try {
+      await containerRef.current.requestFullscreen?.()
+      // Try to lock to landscape on mobile
+      if (screen.orientation?.lock) {
+        screen.orientation.lock('landscape').catch(() => {})
+      }
+    } catch {
+      // Browser may block fullscreen — that's ok
     }
-    setActiveAudio(index)
-    setShowTrackMenu(false)
   }, [])
+
+  // ── Brightness ────────────────────────────────────────────────────────────
+
+  const changeBrightness = useCallback((delta) => {
+    setBrightness((prev) => {
+      const newVal = clamp(prev + delta, 0.3, 1.5)
+      return newVal
+    })
+  }, [])
+
+  // ── Touch Gestures (mobile brightness/volume) ─────────────────────────────
+
+  const showGestureIndicator = useCallback((type, value) => {
+    setGestureIndicator({ type, value })
+    clearTimeout(gestureIndicatorTimeout.current)
+    gestureIndicatorTimeout.current = setTimeout(() => {
+      setGestureIndicator(null)
+    }, 1500)
+  }, [])
+
+  const handleTouchStart = useCallback((e) => {
+    if (e.touches.length !== 1) return
+    const touch = e.touches[0]
+    touchStartRef.current = {
+      x: touch.clientX,
+      y: touch.clientY,
+      startVolume: volume,
+      startBrightness: brightness,
+      time: Date.now(),
+    }
+    // Initialize seek gesture tracking
+    const v = videoRef.current
+    seekGestureRef.current = {
+      startCurrentTime: v ? v.currentTime : 0,
+      startClientX: touch.clientX,
+      lastClientX: touch.clientX,
+    }
+  }, [volume, brightness])
+
+  const handleTouchMove = useCallback((e) => {
+    if (!touchStartRef.current || e.touches.length !== 1) return
+    const touch = e.touches[0]
+    const { x: startX, y: startY, startVolume, startBrightness } = touchStartRef.current
+    const deltaY = startY - touch.clientY
+    const deltaX = touch.clientX - startX
+    const absDeltaX = Math.abs(deltaX)
+    const absDeltaY = Math.abs(deltaY)
+
+    // Ignore very small movements
+    if (absDeltaY < 10 && absDeltaX < 10) return
+
+    // Mark that a gesture is in progress (to prevent click-to-play after swipe)
+    wasGestureRef.current = true
+
+    // Determine which side of the screen we're on
+    const rect = containerRef.current?.getBoundingClientRect()
+    if (!rect) return
+    const isLeftSide = startX < rect.width / 2
+
+    // ── Horizontal swipe → seek ────────────────────────────────────────
+    if (absDeltaX > absDeltaY * 1.5 && seekGestureRef.current) {
+      const v = videoRef.current
+      if (!v) return
+      const dur = duration || durationFromMetaRef.current || 0
+      // Pixels-to-seconds mapping: full screen width = 60 seconds
+      const seekDelta = (deltaX / rect.width) * 60
+      const newTime = clamp(
+        seekGestureRef.current.startCurrentTime + seekDelta,
+        0,
+        dur || Infinity,
+      )
+      // Live-update the video position for visual feedback
+      v.currentTime = newTime
+      seekGestureRef.current.lastClientX = touch.clientX
+      // Show seek indicator
+      const diff = newTime - seekGestureRef.current.startCurrentTime
+      const sign = diff >= 0 ? '+' : ''
+      const seekSec = Math.abs(Math.round(diff))
+      showGestureIndicator('seek', `${sign}${seekSec}s → ${formatTime(newTime)}`)
+      return
+    }
+
+    // ── Vertical swipe → brightness / volume ───────────────────────────
+    if (isLeftSide) {
+      // Left side: brightness control
+      const deltaBrightness = (deltaY / rect.height) * 1.5
+      const newBrightness = clamp(startBrightness + deltaBrightness, 0.3, 1.5)
+      setBrightness(newBrightness)
+      showGestureIndicator('brightness', newBrightness)
+    } else {
+      // Right side: volume control
+      const v = videoRef.current
+      if (!v) return
+      const deltaVolume = (deltaY / rect.height) * 1.5
+      const newVolume = clamp(startVolume + deltaVolume, 0, 1)
+      v.volume = newVolume
+      v.muted = newVolume === 0
+      setVolume(newVolume)
+      setMuted(newVolume === 0)
+      showGestureIndicator('volume', newVolume)
+    }
+  }, [duration, showGestureIndicator])
+
+  const handleTouchEnd = useCallback(() => {
+    touchStartRef.current = null
+    seekGestureRef.current = null
+    // Keep wasGestureRef true for a short while so click handler can skip
+    clearTimeout(gestureClearTimerRef.current)
+    gestureClearTimerRef.current = setTimeout(() => {
+      wasGestureRef.current = false
+    }, 300)
+  }, [])
+
+  // ── Audio track switching ────────────────────────────────────────────────
+
+  const switchAudio = useCallback(async (index) => {
+    if (!onSwitchAudio || !videoRef.current) return
+    const currentPos = videoRef.current.currentTime
+    const wasPlaying = !videoRef.current.paused
+
+    switchingAudioRef.current = true
+    setShowTrackMenu(false)
+
+    const newUrl = await onSwitchAudio(index, currentPos)
+    if (!newUrl) {
+      switchingAudioRef.current = false
+      return
+    }
+
+    pendingPositionRef.current = currentPos
+    pendingPlayRef.current = wasPlaying
+  }, [onSwitchAudio])
+
+  // ── Subtitle track switching ──────────────────────────────────────────────
 
   const switchSub = useCallback((index) => {
     const v = videoRef.current
@@ -145,8 +374,8 @@ export default function VideoPlayer({ src, title, onBack, onDownload, downloadin
     setShowTrackMenu(false)
   }, [])
 
-  // ── Helper: send playback progress ─────────────────────────────────────
-  // Uses refs so this is safe to call from any event listener without stale closures
+  // ── Helper: send playback progress ────────────────────────────────────────
+
   const sendProgress = useCallback(async (isPaused) => {
     const id = itemIdRef.current
     if (!id) return
@@ -159,34 +388,56 @@ export default function VideoPlayer({ src, title, onBack, onDownload, downloadin
         isPaused,
       })
     } catch {
-      // silent — don't break playback for reporting
+      // silent
     }
-  }, []) // no deps needed — reads from refs
+  }, [])
 
-  // ── Seek to resume position once metadata is loaded ────────────────────
+  // ── Handle loaded metadata ────────────────────────────────────────────────
+
   const handleLoadedMetadata = useCallback(() => {
     const v = videoRef.current
     if (!v) return
-    const { audio, subs } = getTracksFromVideo(v)
-    setAudioTracks(audio)
+
+    const subs = getSubTracksFromVideo(v)
     setSubTracks(subs)
-    if (audio.length > 0) {
-      const enabled = audio.findIndex((_, i) => v.audioTracks[i]?.enabled)
-      setActiveAudio(enabled >= 0 ? enabled : 0)
-    }
     for (let i = 0; i < v.textTracks.length; i++) {
       v.textTracks[i].mode = 'hidden'
     }
 
-    // Seek to resume position — use ref so we always have the latest value
-    const pos = initialPositionRef.current
-    if (pos > 0 && !hasSeekedRef.current) {
-      v.currentTime = pos
-      hasSeekedRef.current = true
-    }
-  }, []) // no deps — reads from refs
+    // When hls.js drives playback, resume is handled by its startPosition —
+    // seeking here would fight it. Native HLS / progressive still needs it.
+    const usingHls = !!hlsRef.current
 
-  // ── Periodic progress report (every 15 seconds while playing) ──────────
+    if (switchingAudioRef.current) {
+      switchingAudioRef.current = false
+      // hls.js handles the resume seek via startPosition; native/progressive
+      // needs an explicit currentTime set. Always honor pendingPlay — the
+      // audio-switch click is a user gesture, so play() is allowed.
+      if (!usingHls) {
+        const pos = pendingPositionRef.current
+        if (pos !== null && pos > 0) {
+          v.currentTime = pos
+        }
+      }
+      if (pendingPlayRef.current) {
+        v.play().catch(() => {})
+      }
+      pendingPositionRef.current = null
+      pendingPlayRef.current = false
+      return
+    }
+
+    if (!usingHls) {
+      const pos = initialPositionRef.current
+      if (pos > 0 && !hasSeekedRef.current) {
+        v.currentTime = pos
+        hasSeekedRef.current = true
+      }
+    }
+  }, [])
+
+  // ── Periodic progress report ──────────────────────────────────────────────
+
   useEffect(() => {
     if (!itemId) return
     if (playing) {
@@ -202,14 +453,16 @@ export default function VideoPlayer({ src, title, onBack, onDownload, downloadin
     }
   }, [playing, itemId, sendProgress])
 
-  // ── Report stop on unmount ─────────────────────────────────────────────
+  // ── Report stop + cleanup on unmount ──────────────────────────────────────
+
   useEffect(() => {
     return () => {
+      // Clear any pending gesture/indicator timeouts
+      clearTimeout(gestureClearTimerRef.current)
+      clearTimeout(gestureIndicatorTimeout.current)
+
       const id = itemIdRef.current
       if (!id) return
-      // Use lastPositionRef so we always have the most recent playback
-      // position, even if the video element is detached by the time this
-      // cleanup runs (e.g. React StrictMode double-mount, quick navigation).
       const pos = secToTicks(lastPositionRef.current)
       if (pos <= 0) return
       mediaAPI.reportPlaybackStopped({
@@ -217,9 +470,9 @@ export default function VideoPlayer({ src, title, onBack, onDownload, downloadin
         positionTicks: pos,
       }).catch(() => {})
     }
-  }, []) // run only on unmount — reads id from ref
+  }, [])
 
-  // ── Event listeners ───────────────────────────────────────────────────
+  // ── Event listeners ───────────────────────────────────────────────────────
 
   useEffect(() => {
     const v = videoRef.current
@@ -227,6 +480,11 @@ export default function VideoPlayer({ src, title, onBack, onDownload, downloadin
 
     function onPlay() {
       setPlaying(true)
+      // Auto-fullscreen on mobile (only on first play)
+      if (mobile && !autoFullscreenDoneRef.current && !document.fullscreenElement) {
+        autoFullscreenDoneRef.current = true
+        enterFullscreen()
+      }
     }
 
     function onPause() {
@@ -243,7 +501,7 @@ export default function VideoPlayer({ src, title, onBack, onDownload, downloadin
       },
       durationchange: () => setDuration(v.duration),
       waiting: () => setBuffering(true),
-      canplay: () => { setBuffering(false); handleLoadedMetadata() },
+      canplay: () => { setBuffering(false) },
       loadedmetadata: handleLoadedMetadata,
     }
 
@@ -255,9 +513,10 @@ export default function VideoPlayer({ src, title, onBack, onDownload, downloadin
       Object.entries(handlers).forEach(([ev, fn]) => v.removeEventListener(ev, fn))
       document.removeEventListener('fullscreenchange', fsc)
     }
-  }, [sendProgress, handleLoadedMetadata]) // stable callbacks — safe dep array
+  }, [sendProgress, handleLoadedMetadata, mobile, enterFullscreen])
 
-  // Auto-hide controls
+  // ── Auto-hide controls ────────────────────────────────────────────────────
+
   function resetControlsTimer() {
     setShowControls(true)
     clearTimeout(controlsTimeout.current)
@@ -266,7 +525,8 @@ export default function VideoPlayer({ src, title, onBack, onDownload, downloadin
     }, 3000)
   }
 
-  // Keyboard shortcuts
+  // ── Keyboard shortcuts ────────────────────────────────────────────────────
+
   useEffect(() => {
     function onKey(e) {
       switch (e.key) {
@@ -293,40 +553,146 @@ export default function VideoPlayer({ src, title, onBack, onDownload, downloadin
     return () => window.removeEventListener('keydown', onKey)
   }, [togglePlay, toggleMute, toggleFullscreen])
 
-  const progress = duration ? (currentTime / duration) * 100 : 0
+  const progress = effectiveDuration ? (currentTime / effectiveDuration) * 100 : 0
   const hasAudioChoice = audioTracks.length > 1
   const hasSubChoice = subTracks.length > 0
+
+  const activeAudioLabel = audioTracks[activeAudioIndex]
+    ? audioTracks[activeAudioIndex].language
+      ? `${audioTracks[activeAudioIndex].displayTitle} (${audioTracks[activeAudioIndex].language})`
+      : audioTracks[activeAudioIndex].displayTitle
+    : 'Audio'
+
+  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <div
       ref={containerRef}
-      className="relative bg-black w-full h-full select-none"
+      className="relative bg-black w-full h-full select-none overflow-hidden"
       onMouseMove={resetControlsTimer}
       onMouseLeave={() => { playing && setShowControls(false); setShowTrackMenu(false) }}
+      onTouchStart={mobile ? handleTouchStart : undefined}
+      onTouchMove={mobile ? handleTouchMove : undefined}
+      onTouchEnd={mobile ? handleTouchEnd : undefined}
+      onTouchCancel={mobile ? handleTouchEnd : undefined}
       style={{ cursor: showControls ? 'default' : 'none' }}
     >
-      {/* Video element */}
-      <video
-        ref={videoRef}
-        src={src}
-        className="w-full h-full object-contain"
-        onClick={togglePlay}
-        playsInline
-        autoPlay
-        muted={muted}
-      />
+      {/* Video wrapper with brightness filter */}
+      <div
+        ref={videoWrapperRef}
+        className="absolute inset-0 flex items-center justify-center"
+        style={{ filter: `brightness(${brightness})` }}
+      >
+        <video
+          ref={videoRef}
+          className="w-full h-full object-contain"
+          onClick={mobile ? undefined : togglePlay}
+          playsInline
+          autoPlay
+          muted={muted}
+        >
+          {subTracks.map((t) => (
+            <track
+              key={t.index}
+              kind="subtitles"
+              srcLang={t.language || undefined}
+              label={t.label}
+              default={activeSub === t.index}
+            />
+          ))}
+        </video>
+      </div>
+
+      {/* Brightness overlay for click-to-seek on mobile */}
+      {mobile && (
+        <div
+          className="absolute inset-0 z-10"
+          onClick={(e) => {
+            // Only toggle play if no gesture was just performed
+            if (!wasGestureRef.current) {
+              togglePlay()
+              resetControlsTimer()
+            }
+          }}
+        />
+      )}
 
       {/* Buffering spinner */}
       <AnimatePresence>
         {buffering && (
           <motion.div
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="absolute inset-0 flex items-center justify-center pointer-events-none"
+            className="absolute inset-0 flex items-center justify-center pointer-events-none z-20"
           >
             <svg className="animate-spin w-14 h-14 text-white/80" viewBox="0 0 24 24" fill="none">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
             </svg>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Gesture indicator overlay */}
+      <AnimatePresence>
+        {gestureIndicator && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.8 }}
+            className="absolute inset-0 flex items-center justify-center pointer-events-none z-30"
+          >
+            <div className="bg-black/60 backdrop-blur-sm rounded-2xl px-8 py-6 flex flex-col items-center gap-3">
+              {gestureIndicator.type === 'seek' ? (
+                <>
+                  <svg className="w-10 h-10 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                      d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span className="text-white text-lg font-bold font-mono">
+                    {gestureIndicator.value}
+                  </span>
+                </>
+              ) : gestureIndicator.type === 'brightness' ? (
+                <>
+                  <svg className="w-10 h-10 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                      d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                  </svg>
+                  <span className="text-white text-sm font-medium">
+                    Brightness {Math.round(gestureIndicator.value * 100)}%
+                  </span>
+                  <div className="w-32 h-1.5 bg-white/20 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-white rounded-full transition-all"
+                      style={{ width: `${((gestureIndicator.value - 0.3) / 1.2) * 100}%` }}
+                    />
+                  </div>
+                </>
+              ) : (
+                <>
+                  {gestureIndicator.value === 0 ? (
+                    <svg className="w-10 h-10 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                        d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15zM17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
+                    </svg>
+                  ) : (
+                    <svg className="w-10 h-10 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                        d="M15.536 8.464a5 5 0 010 7.072M12 6v12m-3.536-9.536a5 5 0 000 7.072M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                    </svg>
+                  )}
+                  <span className="text-white text-sm font-medium">
+                    Volume {Math.round(gestureIndicator.value * 100)}%
+                  </span>
+                  <div className="w-32 h-1.5 bg-white/20 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-white rounded-full transition-all"
+                      style={{ width: `${gestureIndicator.value * 100}%` }}
+                    />
+                  </div>
+                </>
+              )}
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -337,7 +703,7 @@ export default function VideoPlayer({ src, title, onBack, onDownload, downloadin
           <motion.div
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="absolute inset-0 flex flex-col justify-between"
+            className="absolute inset-0 flex flex-col justify-between z-40"
           >
             {/* Top bar */}
             <div className="bg-gradient-to-b from-black/70 to-transparent px-4 py-4 flex items-center gap-4">
@@ -348,7 +714,7 @@ export default function VideoPlayer({ src, title, onBack, onDownload, downloadin
                   </svg>
                 </button>
               )}
-              {title && <h2 className="text-white font-semibold text-sm flex-1">{title}</h2>}
+              {title && <h2 className="text-white font-semibold text-sm flex-1 truncate">{title}</h2>}
               {onDownload && (
                 <button
                   onClick={onDownload}
@@ -471,13 +837,12 @@ export default function VideoPlayer({ src, title, onBack, onDownload, downloadin
 
                   {/* Time */}
                   <span className="text-white text-xs font-mono ml-1">
-                    {formatTime(currentTime)} / {formatTime(duration)}
+                    {formatTime(currentTime)} / {formatTime(effectiveDuration)}
                   </span>
                 </div>
 
                 {/* Right side controls */}
                 <div className="flex items-center gap-1">
-
                   {/* Audio track button */}
                   {hasAudioChoice && (
                     <div className="relative">
@@ -492,7 +857,7 @@ export default function VideoPlayer({ src, title, onBack, onDownload, downloadin
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                             d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
                         </svg>
-                        Audio
+                        <span className="hidden sm:inline truncate max-w-[80px]">{activeAudioLabel}</span>
                       </button>
                       <AnimatePresence>
                         {showTrackMenu === 'audio' && (
@@ -500,25 +865,28 @@ export default function VideoPlayer({ src, title, onBack, onDownload, downloadin
                             initial={{ opacity: 0, y: 8 }}
                             animate={{ opacity: 1, y: 0 }}
                             exit={{ opacity: 0, y: 8 }}
-                            className="absolute bottom-full right-0 mb-2 min-w-[160px] bg-zinc-900 border border-zinc-700 rounded-xl overflow-hidden shadow-2xl"
+                            className="absolute bottom-full right-0 mb-2 min-w-[200px] bg-zinc-900 border border-zinc-700 rounded-xl overflow-hidden shadow-2xl"
                           >
                             <p className="text-xs text-zinc-500 px-3 pt-2.5 pb-1 font-medium uppercase tracking-wide">Audio</p>
                             {audioTracks.map((t) => (
                               <button
-                                key={t.id}
+                                key={t.index}
                                 onClick={() => switchAudio(t.index)}
                                 className={`w-full text-left px-3 py-2 text-sm flex items-center gap-2 transition-colors ${
-                                  activeAudio === t.index ? 'text-violet-400 bg-violet-500/10' : 'text-white hover:bg-zinc-800'
+                                  activeAudioIndex === t.index ? 'text-violet-400 bg-violet-500/10' : 'text-white hover:bg-zinc-800'
                                 }`}
                               >
-                                {activeAudio === t.index && (
+                                {activeAudioIndex === t.index && (
                                   <svg className="w-3.5 h-3.5 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24">
                                     <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" />
                                   </svg>
                                 )}
-                                <span className={activeAudio === t.index ? '' : 'ml-5'}>
-                                  {t.label}{t.language ? ` (${t.language})` : ''}
-                                </span>
+                                <div className={activeAudioIndex === t.index ? '' : 'ml-5'}>
+                                  <span>{t.displayTitle}</span>
+                                  {t.language && (
+                                    <span className="text-zinc-400 ml-1.5 text-xs">{t.language.toUpperCase()}</span>
+                                  )}
+                                </div>
                               </button>
                             ))}
                           </motion.div>
@@ -552,7 +920,6 @@ export default function VideoPlayer({ src, title, onBack, onDownload, downloadin
                             className="absolute bottom-full right-0 mb-2 min-w-[160px] bg-zinc-900 border border-zinc-700 rounded-xl overflow-hidden shadow-2xl"
                           >
                             <p className="text-xs text-zinc-500 px-3 pt-2.5 pb-1 font-medium uppercase tracking-wide">Subtitles</p>
-                            {/* Off option */}
                             <button
                               onClick={disableSubs}
                               className={`w-full text-left px-3 py-2 text-sm flex items-center gap-2 transition-colors ${

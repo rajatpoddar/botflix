@@ -15,6 +15,7 @@ import TVShowDetailPage from './pages/TVShowDetailPage'
 import MovieDetailPage from './pages/MovieDetailPage'
 import ProfilePage from './pages/ProfilePage'
 import WatchlistPage from './pages/WatchlistPage'
+import CollectionDetailPage from './pages/CollectionDetailPage'
 
 export default function App() {
   return (
@@ -32,6 +33,7 @@ export default function App() {
         <Route path="/browse/shows" element={<ProtectedRoute><TVShowsPage /></ProtectedRoute>} />
         <Route path="/show/:id" element={<ProtectedRoute><TVShowDetailPage /></ProtectedRoute>} />
         <Route path="/movie/:id" element={<ProtectedRoute><MovieDetailPage /></ProtectedRoute>} />
+        <Route path="/collection/:id" element={<ProtectedRoute><CollectionDetailPage /></ProtectedRoute>} />
         <Route path="/watch/:id" element={<ProtectedRoute><WatchPage /></ProtectedRoute>} />
         <Route path="/search" element={<ProtectedRoute><SearchPage /></ProtectedRoute>} />
         <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />

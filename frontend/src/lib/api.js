@@ -48,7 +48,28 @@ export const mediaAPI = {
   getLibraries: () => api.get('/api/media/libraries'),
   getItems: (params = {}) => api.get('/api/media/items', { params }),
   getItem: (itemId) => api.get(`/api/media/item/${itemId}`),
-  getStreamUrl: (itemId) => api.get(`/api/media/stream-url/${itemId}`),
+  getStreamUrl: (itemId, params = {}) => api.get(`/api/media/stream-url/${itemId}`, { params }),
+  getProxyStreamUrl: (itemId, params = {}) => {
+    // Build a URL that proxies through the backend — critical for mobile devices
+    // that may not be able to reach Jellyfin directly.
+    // Pass our own JWT token so the <video> element can authenticate (no custom headers).
+    const baseUrl = import.meta.env.VITE_API_URL || ''
+    const token = localStorage.getItem('access_token') || ''
+    const allParams = { ...params, token }
+    const query = new URLSearchParams(allParams).toString()
+    return `${baseUrl}/api/media/proxy-stream/${itemId}?${query}`
+  },
+  getHlsUrl: (itemId, params = {}) => {
+    // Build an HLS manifest URL proxied through the backend. HLS segments the
+    // media so seeking/resume jump to a segment instead of restarting a
+    // progressive transcode. Pass our JWT token so requests authenticate
+    // without custom headers (the <video>/hls.js can't set headers on segments).
+    const baseUrl = import.meta.env.VITE_API_URL || ''
+    const token = localStorage.getItem('access_token') || ''
+    const allParams = { ...params, token }
+    const query = new URLSearchParams(allParams).toString()
+    return `${baseUrl}/api/media/hls/${itemId}/main.m3u8?${query}`
+  },
   getDownloadUrl: (itemId) => api.get(`/api/media/download-url/${itemId}`),
   getContinueWatching: (limit = 20) => api.get(`/api/media/continue-watching?limit=${limit}`),
   getSimilar: (itemId, limit = 12) => api.get(`/api/media/similar/${itemId}?limit=${limit}`),
