@@ -39,6 +39,7 @@ class LoginResponse(BaseModel):
     jellyfin_token: str
     jellyfin_user_id: str
     username: str
+    email: str
 
 
 class ForgotPasswordRequest(BaseModel):
@@ -65,6 +66,17 @@ class UserOut(BaseModel):
     username: str
     is_active: bool
     created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+# ── Subscription ──────────────────────────────────────────────────────────────
+
+class SubscriptionStatus(BaseModel):
+    status: str  # 'trial' | 'active' | 'expired' | 'cancelled'
+    trial_started_at: datetime | None = None
+    subscription_ends_at: datetime | None = None
+    days_remaining: int | None = None
 
     model_config = {"from_attributes": True}
 

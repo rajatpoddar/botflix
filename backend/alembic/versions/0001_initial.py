@@ -6,7 +6,6 @@ Create Date: 2024-01-01 00:00:00.000000
 """
 import sqlalchemy as sa
 from alembic import op
-import sqlalchemy.dialects.postgresql as pg
 
 revision = "0001"
 down_revision = None
@@ -17,7 +16,8 @@ depends_on = None
 def upgrade() -> None:
     op.create_table(
         "users",
-        sa.Column("id", pg.UUID(as_uuid=True), primary_key=True, nullable=False),
+        # Use String for UUID — works on both SQLite and PostgreSQL
+        sa.Column("id", sa.String(36), primary_key=True, nullable=False),
         sa.Column("email", sa.String(255), unique=True, nullable=False, index=True),
         sa.Column("username", sa.String(100), unique=True, nullable=False, index=True),
         sa.Column("hashed_password", sa.String(255), nullable=False),
@@ -28,13 +28,13 @@ def upgrade() -> None:
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
+            server_default=sa.func.now(),
             nullable=False,
         ),
         sa.Column(
             "updated_at",
             sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
+            server_default=sa.func.now(),
             nullable=False,
         ),
     )

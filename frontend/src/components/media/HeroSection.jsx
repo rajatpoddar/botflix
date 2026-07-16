@@ -4,6 +4,17 @@ import { motion, AnimatePresence } from 'framer-motion'
 
 const JELLYFIN_BASE = import.meta.env.VITE_JELLYFIN_URL || ''
 
+function getJellyfinImageUrl(itemId, type, index = null, width = 1920) {
+  if (!JELLYFIN_BASE) return null
+  const token = localStorage.getItem('jellyfin_token')
+  const path = index !== null
+    ? `${JELLYFIN_BASE}/Items/${itemId}/Images/${type}/${index}`
+    : `${JELLYFIN_BASE}/Items/${itemId}/Images/${type}`
+  const params = new URLSearchParams({ width, quality: 85 })
+  if (token) params.set('api_key', token)
+  return `${path}?${params}`
+}
+
 function truncate(str, n) {
   return str?.length > n ? str.slice(0, n - 1) + '…' : str
 }
@@ -26,9 +37,9 @@ export default function HeroSection({ items = [] }) {
 
   const item = featured[current]
   const backdropUrl = item.BackdropImageTags?.length
-    ? `${JELLYFIN_BASE}/Items/${item.Id}/Images/Backdrop/0?width=1920&quality=85`
+    ? getJellyfinImageUrl(item.Id, 'Backdrop', 0)
     : item.ImageTags?.Primary
-    ? `${JELLYFIN_BASE}/Items/${item.Id}/Images/Primary?width=1920&quality=85`
+    ? getJellyfinImageUrl(item.Id, 'Primary')
     : null
 
   return (
@@ -104,7 +115,7 @@ export default function HeroSection({ items = [] }) {
                 Play
               </button>
               <button
-                onClick={() => navigate(`/watch/${item.Id}`)}
+                onClick={() => navigate(item.Type === 'Series' ? `/show/${item.Id}` : `/movie/${item.Id}`)}
                 className="flex items-center gap-2 bg-zinc-800/80 text-white font-semibold px-6 py-3 rounded-lg hover:bg-zinc-700 transition-colors border border-zinc-700"
               >
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">

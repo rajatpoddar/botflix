@@ -1,8 +1,9 @@
-export function saveSession({ access_token, jellyfin_token, jellyfin_user_id, username }) {
+export function saveSession({ access_token, jellyfin_token, jellyfin_user_id, username, email }) {
   localStorage.setItem('access_token', access_token)
   localStorage.setItem('jellyfin_token', jellyfin_token)
   localStorage.setItem('jellyfin_user_id', jellyfin_user_id)
   localStorage.setItem('username', username)
+  if (email) localStorage.setItem('email', email)
 }
 
 export function clearSession() {
@@ -10,6 +11,7 @@ export function clearSession() {
   localStorage.removeItem('jellyfin_token')
   localStorage.removeItem('jellyfin_user_id')
   localStorage.removeItem('username')
+  localStorage.removeItem('email')
 }
 
 export function isAuthenticated() {

@@ -35,17 +35,37 @@ export const authAPI = {
   forgotPassword: (email) => api.post('/auth/forgot-password', { email }),
   resetPassword: (token, new_password) =>
     api.post('/auth/reset-password', { token, new_password }),
+  // ── Subscription ───────────────────────────────────────────────────────
+  getSubscription: () => api.get('/auth/subscription'),
+  startTrial: () => api.post('/auth/subscription/start-trial'),
+  activateSubscription: () => api.post('/auth/subscription/activate'),
 }
 
 // ── Media ─────────────────────────────────────────────────────────────────────
 export const mediaAPI = {
   getLatest: (limit = 20) => api.get(`/api/media/latest?limit=${limit}`),
   getCategories: () => api.get('/api/media/categories'),
+  getLibraries: () => api.get('/api/media/libraries'),
   getItems: (params = {}) => api.get('/api/media/items', { params }),
   getItem: (itemId) => api.get(`/api/media/item/${itemId}`),
   getStreamUrl: (itemId) => api.get(`/api/media/stream-url/${itemId}`),
+  getDownloadUrl: (itemId) => api.get(`/api/media/download-url/${itemId}`),
+  getContinueWatching: (limit = 20) => api.get(`/api/media/continue-watching?limit=${limit}`),
+  getSimilar: (itemId, limit = 12) => api.get(`/api/media/similar/${itemId}?limit=${limit}`),
   search: (query, limit = 20) =>
     api.get(`/api/media/search?query=${encodeURIComponent(query)}&limit=${limit}`),
+  // ── Playback reporting ──────────────────────────────────────────────────
+  reportPlaybackProgress: (data) => api.post('/api/media/playback/progress', data),
+  reportPlaybackStopped: (data) => api.post('/api/media/playback/stop', data),
+
+  // ── Watchlist ────────────────────────────────────────────────────────────
+  getWatchlist: (limit = 50) => api.get(`/api/media/watchlist?limit=${limit}`),
+  addToWatchlist: (itemId) => api.post(`/api/media/watchlist/${itemId}`),
+  removeFromWatchlist: (itemId) => api.delete(`/api/media/watchlist/${itemId}`),
+
+  getSeasons: (seriesId) => api.get(`/api/media/seasons/${seriesId}`),
+  getEpisodes: (seriesId, seasonId = null) =>
+    api.get(`/api/media/episodes/${seriesId}${seasonId ? `?season_id=${seasonId}` : ''}`),
 }
 
 // ── Jellyfin helpers ──────────────────────────────────────────────────────────

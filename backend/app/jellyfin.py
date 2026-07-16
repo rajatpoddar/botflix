@@ -31,17 +31,54 @@ def _user_headers(token: str) -> dict:
 async def create_jellyfin_user(username: str, password: str) -> dict[str, Any]:
     """Create a restricted user on the Jellyfin server."""
     url = f"{settings.JELLYFIN_SERVER_URL}/Users/New"
-    payload = {"Name": username, "Password": password}
 
     async with httpx.AsyncClient(timeout=15) as client:
-        resp = await client.post(url, json=payload, headers=_ADMIN_HEADERS)
-        resp.raise_for_status()
+        # Newer Jellyfin versions (10.9+) no longer accept Password in the
+        # create-user body — create the user first, then set the password.
+        resp = await client.post(url, json={"Name": username}, headers=_ADMIN_HEADERS)
+        if not resp.is_success:
+            raise httpx.HTTPStatusError(
+                f"{resp.status_code} {resp.reason_phrase}: {resp.text}",
+                request=resp.request,
+                response=resp,
+            )
         user_data = resp.json()
+
+    # Set the password on the newly created account
+    user_id = user_data["Id"]
+    password_url = f"{settings.JELLYFIN_SERVER_URL}/Users/{user_id}/Password"
+    async with httpx.AsyncClient(timeout=15) as client:
+        pw_resp = await client.post(
+            password_url,
+            json={"NewPw": password},
+            headers=_ADMIN_HEADERS,
+        )
+        if not pw_resp.is_success:
+            # Best-effort cleanup: delete the user we just created
+            await client.delete(
+                f"{settings.JELLYFIN_SERVER_URL}/Users/{user_id}",
+                headers=_ADMIN_HEADERS,
+            )
+            raise httpx.HTTPStatusError(
+                f"Password set failed {pw_resp.status_code}: {pw_resp.text}",
+                request=pw_resp.request,
+                response=pw_resp,
+            )
 
     # Apply restricted policy (no admin, limited to configured libraries)
     user_id = user_data["Id"]
     policy_url = f"{settings.JELLYFIN_SERVER_URL}/Users/{user_id}/Policy"
+
+    # Fetch the existing policy first so we don't wipe unset fields
+    async with httpx.AsyncClient(timeout=15) as client:
+        existing_resp = await client.get(
+            f"{settings.JELLYFIN_SERVER_URL}/Users/{user_id}",
+            headers=_ADMIN_HEADERS,
+        )
+        existing_policy = existing_resp.json().get("Policy", {}) if existing_resp.is_success else {}
+
     policy = {
+        **existing_policy,
         "IsAdministrator": False,
         "IsDisabled": False,
         "EnableContentDownloading": False,

@@ -15,7 +15,7 @@ export function AuthProvider({ children }) {
     const { data } = await authAPI.login(credentials)
     saveSession(data)
     setUser({ username: data.username })
-    navigate('/')
+    navigate('/browse')
     return data
   }, [navigate])
 
@@ -28,13 +28,13 @@ export function AuthProvider({ children }) {
     })
     saveSession(data)
     setUser({ username: data.username })
-    navigate('/')
+    navigate('/browse')
   }, [navigate])
 
   const logout = useCallback(() => {
     clearSession()
     setUser(null)
-    navigate('/login')
+    navigate('/')
   }, [navigate])
 
   return (

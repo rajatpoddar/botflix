@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAuth } from '../../contexts/AuthContext'
 
 export default function Navbar() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
   const [scrolled, setScrolled] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
@@ -26,6 +27,18 @@ export default function Navbar() {
     }
   }
 
+  const navLinks = [
+    { label: 'Home', to: '/browse' },
+    { label: 'Movies', to: '/browse/movies' },
+    { label: 'TV Shows', to: '/browse/shows' },
+    { label: 'Watchlist', to: '/browse/watchlist' },
+  ]
+
+  function isActive(to) {
+    if (to === '/browse') return location.pathname === '/browse'
+    return location.pathname.startsWith(to)
+  }
+
   return (
     <motion.nav
       className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
@@ -38,17 +51,34 @@ export default function Navbar() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
-          <Link to="/" className="flex-shrink-0">
+          <Link to="/browse" className="flex-shrink-0">
             <span className="text-2xl font-black tracking-tight text-white">
               STREAM<span className="text-violet-500">X</span>
             </span>
           </Link>
 
           {/* Desktop nav */}
-          <div className="hidden md:flex items-center gap-6 text-sm font-medium text-zinc-400">
-            <Link to="/" className="hover:text-white transition-colors">Home</Link>
-            <Link to="/browse/movies" className="hover:text-white transition-colors">Movies</Link>
-            <Link to="/browse/shows" className="hover:text-white transition-colors">TV Shows</Link>
+          <div className="hidden md:flex items-center gap-1 text-sm font-medium">
+            {navLinks.map((link) => (
+              <Link
+                key={link.to}
+                to={link.to}
+                className={`relative px-3 py-1.5 rounded-md transition-colors ${
+                  isActive(link.to)
+                    ? 'text-white'
+                    : 'text-zinc-400 hover:text-white'
+                }`}
+              >
+                {link.label}
+                {isActive(link.to) && (
+                  <motion.div
+                    layoutId="nav-indicator"
+                    className="absolute bottom-0 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-violet-500"
+                    transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                  />
+                )}
+              </Link>
+            ))}
           </div>
 
           {/* Right side */}
@@ -118,6 +148,16 @@ export default function Navbar() {
                       <p className="text-xs text-zinc-500">Signed in as</p>
                       <p className="text-sm font-medium truncate">{user?.username}</p>
                     </div>
+                    <button
+                      onClick={() => { setMenuOpen(false); navigate('/profile') }}
+                      className="w-full text-left px-4 py-3 text-sm text-zinc-300 hover:bg-zinc-800 transition-colors flex items-center gap-2"
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                          d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                      </svg>
+                      Profile
+                    </button>
                     <button
                       onClick={logout}
                       className="w-full text-left px-4 py-3 text-sm text-red-400 hover:bg-zinc-800 transition-colors flex items-center gap-2"

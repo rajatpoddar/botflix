@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import jellyfin as jf
 from app.database import get_db
+from app.dependencies import get_current_user
 from app.models import User
 from app.schemas import (
     ForgotPasswordRequest,
@@ -15,6 +16,7 @@ from app.schemas import (
     MessageResponse,
     RegisterRequest,
     ResetPasswordRequest,
+    SubscriptionStatus,
     UserOut,
 )
 from app.security import (
@@ -56,12 +58,15 @@ async def register(payload: RegisterRequest, db: AsyncSession = Depends(get_db))
             detail="Could not create media account. Please try again.",
         )
 
-    # Persist to our database
+    # Persist to our database — auto-start the 7-day free trial
+    now = datetime.utcnow()
     user = User(
         email=payload.email,
         username=payload.username,
         hashed_password=hash_password(payload.password),
         jellyfin_user_id=jellyfin_user_id,
+        subscription_status="trial",
+        trial_started_at=now,
     )
     db.add(user)
     await db.commit()
@@ -110,6 +115,7 @@ async def login(payload: LoginRequest, db: AsyncSession = Depends(get_db)):
         jellyfin_token=jellyfin_token,
         jellyfin_user_id=jellyfin_user_id,
         username=user.username,
+        email=user.email,
     )
 
 
@@ -155,7 +161,7 @@ async def reset_password(
     if not user or not user.reset_token_expires:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid token")
 
-    if user.reset_token_expires < datetime.now(timezone.utc):
+    if user.reset_token_expires < datetime.utcnow():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Token has expired")
 
     # Update password locally
@@ -173,3 +179,86 @@ async def reset_password(
             # Don't block the user — local password is already updated
 
     return MessageResponse(message="Password reset successfully")
+
+
+# ── Subscription ──────────────────────────────────────────────────────────────
+
+@router.get("/subscription", response_model=SubscriptionStatus)
+async def get_subscription(
+    current_user: User = Depends(get_current_user),
+) -> SubscriptionStatus:
+    """Return the current user's subscription status and trial info."""
+    now = datetime.utcnow()
+    status = current_user.subscription_status or "trial"
+
+    # If still in trial, check if 7 days have passed
+    if status == "trial":
+        if current_user.trial_started_at:
+            trial_end = current_user.trial_started_at + timedelta(days=7)
+            if now > trial_end:
+                # Trial expired — mark it
+                status = "expired"
+        else:
+            # Trial hasn't started yet (new user) — still valid
+            pass
+
+    # Calculate days remaining
+    days_remaining = None
+    if status == "trial" and current_user.trial_started_at:
+        trial_end = current_user.trial_started_at + timedelta(days=7)
+        remaining = (trial_end - now).days
+        days_remaining = max(0, remaining)
+    elif status == "active" and current_user.subscription_ends_at:
+        remaining = (current_user.subscription_ends_at - now).days
+        days_remaining = max(0, remaining)
+
+    return SubscriptionStatus(
+        status=status,
+        trial_started_at=current_user.trial_started_at,
+        subscription_ends_at=current_user.subscription_ends_at,
+        days_remaining=days_remaining,
+    )
+
+
+@router.post("/subscription/start-trial")
+async def start_trial(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> SubscriptionStatus:
+    """Start the 7-day free trial for a new user."""
+    if current_user.trial_started_at:
+        raise HTTPException(
+            status_code=400,
+            detail="Trial already started",
+        )
+
+    now = datetime.utcnow()
+    current_user.trial_started_at = now
+    current_user.subscription_status = "trial"
+    await db.commit()
+    await db.refresh(current_user)
+
+    return SubscriptionStatus(
+        status="trial",
+        trial_started_at=now,
+        subscription_ends_at=now + timedelta(days=7),
+    )
+
+
+@router.post("/subscription/activate")
+async def activate_subscription(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> SubscriptionStatus:
+    """Mark subscription as active (would happen after payment)."""
+    now = datetime.utcnow()
+    current_user.subscription_status = "active"
+    current_user.subscription_ends_at = now + timedelta(days=30)  # 1 month
+    await db.commit()
+    await db.refresh(current_user)
+
+    return SubscriptionStatus(
+        status="active",
+        trial_started_at=current_user.trial_started_at,
+        subscription_ends_at=current_user.subscription_ends_at,
+    )
