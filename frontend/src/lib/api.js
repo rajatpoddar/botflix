@@ -84,6 +84,9 @@ export const mediaAPI = {
   addToWatchlist: (itemId) => api.post(`/api/media/watchlist/${itemId}`),
   removeFromWatchlist: (itemId) => api.delete(`/api/media/watchlist/${itemId}`),
 
+  // ── Landing page (public) ───────────────────────────────────────────────
+  getLandingData: () => api.get('/api/media/landing'),
+
   getSeasons: (seriesId) => api.get(`/api/media/seasons/${seriesId}`),
   getEpisodes: (seriesId, seasonId = null) =>
     api.get(`/api/media/episodes/${seriesId}${seasonId ? `?season_id=${seasonId}` : ''}`),
@@ -92,4 +95,47 @@ export const mediaAPI = {
 // ── Jellyfin helpers ──────────────────────────────────────────────────────────
 export function getJellyfinImageUrl(jellyfinBase, itemId, type = 'Primary', width = 400) {
   return `${jellyfinBase}/Items/${itemId}/Images/${type}?width=${width}&quality=90`
+}
+
+/**
+ * Generate a proxied image URL that routes through our backend.
+ * This is essential when the app is accessed via a domain (e.g. Cloudflare Tunnel)
+ * because the browser may not be able to reach the Jellyfin server directly.
+ * The JWT token is passed as a query param so <img> elements can authenticate
+ * (they can't set custom headers).
+ *
+ * NOTE: Requires a valid JWT token (user must be logged in).
+ * For public pages (like the landing page), use getPublicImageUrl() instead.
+ */
+export function getProxiedImageUrl(itemId, type = 'Primary', width = 400, quality = 90, index = null) {
+  const baseUrl = import.meta.env.VITE_API_URL || ''
+  const token = localStorage.getItem('access_token') || ''
+  const params = new URLSearchParams({
+    type,
+    width: String(width),
+    quality: String(quality),
+    token,
+  })
+  if (index !== null) {
+    params.set('index', String(index))
+  }
+  return `${baseUrl}/api/media/image/${itemId}?${params}`
+}
+
+/**
+ * Generate a public proxied image URL — NO authentication needed.
+ * Used on the landing page (before login) for the poster collage and
+ * Top 10 Trending section. Uses the server API key internally.
+ */
+export function getPublicImageUrl(itemId, type = 'Primary', width = 400, quality = 90, index = null) {
+  const baseUrl = import.meta.env.VITE_API_URL || ''
+  const params = new URLSearchParams({
+    type,
+    width: String(width),
+    quality: String(quality),
+  })
+  if (index !== null) {
+    params.set('index', String(index))
+  }
+  return `${baseUrl}/api/media/public-image/${itemId}?${params}`
 }

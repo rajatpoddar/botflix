@@ -1,9 +1,7 @@
 import { useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { mediaAPI } from '../../lib/api'
-
-const JELLYFIN_BASE = import.meta.env.VITE_JELLYFIN_URL || ''
+import { mediaAPI, getProxiedImageUrl } from '../../lib/api'
 
 function formatRuntime(ticks) {
   if (!ticks) return null
@@ -14,11 +12,8 @@ function formatRuntime(ticks) {
 }
 
 function getJellyfinImageUrl(itemId, tag, width = 300) {
-  if (!JELLYFIN_BASE || !tag) return null
-  const token = localStorage.getItem('jellyfin_token')
-  const params = new URLSearchParams({ width, quality: 90 })
-  if (token) params.set('api_key', token)
-  return `${JELLYFIN_BASE}/Items/${itemId}/Images/Primary?${params}`
+  if (!tag) return null
+  return getProxiedImageUrl(itemId, 'Primary', width, 90)
 }
 
 export default function MediaCard({ item }) {

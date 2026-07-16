@@ -23,6 +23,11 @@ function isMobile() {
     || (navigator.maxTouchPoints > 0 && window.innerWidth < 1024)
 }
 
+/** Check if the device is iOS (iPhone/iPad/iPod) — needs special fullscreen handling */
+function isIOS() {
+  return /iPhone|iPad|iPod/i.test(navigator.userAgent)
+}
+
 /** Clamp a value between min and max */
 function clamp(val, min, max) {
   return Math.min(max, Math.max(min, val))
@@ -196,8 +201,19 @@ export default function VideoPlayer({
   }, [])
 
   const toggleFullscreen = useCallback(() => {
+    const v = videoRef.current
     const el = containerRef.current
-    if (!el) return
+    if (!el || !v) return
+
+    // iOS Safari doesn't support the standard Fullscreen API.
+    // Use webkitEnterFullscreen on the <video> element instead.
+    if (isIOS()) {
+      if (v.webkitEnterFullscreen) {
+        v.webkitEnterFullscreen()
+      }
+      return
+    }
+
     if (!document.fullscreenElement) {
       el.requestFullscreen?.()
     } else {
@@ -208,9 +224,20 @@ export default function VideoPlayer({
   // ── Auto-fullscreen on mobile ─────────────────────────────────────────────
 
   const enterFullscreen = useCallback(async () => {
-    if (!containerRef.current) return
+    const v = videoRef.current
+    const el = containerRef.current
+    if (!el || !v) return
+
+    // iOS: use webkitEnterFullscreen on the video element
+    if (isIOS()) {
+      if (v.webkitEnterFullscreen) {
+        v.webkitEnterFullscreen()
+      }
+      return
+    }
+
     try {
-      await containerRef.current.requestFullscreen?.()
+      await el.requestFullscreen?.()
       // Try to lock to landscape on mobile
       if (screen.orientation?.lock) {
         screen.orientation.lock('landscape').catch(() => {})
@@ -588,6 +615,7 @@ export default function VideoPlayer({
           className="w-full h-full object-contain"
           onClick={mobile ? undefined : togglePlay}
           playsInline
+          webkit-playsinline="true"
           autoPlay
           muted={muted}
         >

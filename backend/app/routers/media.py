@@ -666,6 +666,207 @@ async def remove_from_watchlist(
     return {"status": "ok", "favorite": False}
 
 
+@router.get("/image/{item_id}")
+async def proxy_image(
+    item_id: str,
+    image_type: str = Query(default="Primary", alias="type"),
+    width: int = Query(default=400, ge=50, le=1920),
+    quality: int = Query(default=90, ge=1, le=100),
+    index: int | None = Query(default=None),
+    token: str | None = Query(default=None),
+):
+    """
+    Proxy Jellyfin images (posters, backdrops, etc.) through our backend.
+    Uses our own JWT token (?token=xxx) for authentication — critical because
+    <img> elements can't send custom headers and the browser may not be able to
+    reach the Jellyfin server directly behind a domain/Cloudflare Tunnel.
+
+    For **authenticated** users who have a valid JWT token.
+    For public/unauthenticated access (e.g., landing page), use /public-image instead.
+    """
+    from app.config import settings
+    from app.security import decode_access_token
+
+    if not token or not decode_access_token(token):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+
+    # Build Jellyfin image URL using server API key for auth
+    if index is not None:
+        img_url = f"{settings.JELLYFIN_SERVER_URL}/Items/{item_id}/Images/{image_type}/{index}"
+    else:
+        img_url = f"{settings.JELLYFIN_SERVER_URL}/Items/{item_id}/Images/{image_type}"
+    img_url += f"?width={width}&quality={quality}"
+
+    return await _pipe_jellyfin_image(img_url, item_id, image_type)
+
+
+@router.get("/public-image/{item_id}")
+async def proxy_public_image(
+    item_id: str,
+    image_type: str = Query(default="Primary", alias="type"),
+    width: int = Query(default=400, ge=50, le=1920),
+    quality: int = Query(default=90, ge=1, le=100),
+    index: int | None = Query(default=None),
+):
+    """
+    Public image proxy — no authentication required.
+    Uses the server API key to proxy Jellyfin images.
+    This is used by the landing page (before login) to display the
+    poster collage background and Top 10 trending section.
+    """
+    from app.config import settings
+
+    # Build Jellyfin image URL using server API key
+    if index is not None:
+        img_url = f"{settings.JELLYFIN_SERVER_URL}/Items/{item_id}/Images/{image_type}/{index}"
+    else:
+        img_url = f"{settings.JELLYFIN_SERVER_URL}/Items/{item_id}/Images/{image_type}"
+    img_url += f"?width={width}&quality={quality}"
+
+    return await _pipe_jellyfin_image(img_url, item_id, image_type)
+
+
+async def _pipe_jellyfin_image(img_url: str, item_id: str, image_type: str) -> Response:
+    """Shared logic: fetch an image from Jellyfin and stream it back."""
+    from app.config import settings
+
+    headers = {
+        "X-Emby-Authorization": (
+            f'MediaBrowser Client="VOD Platform", Device="Proxy", '
+            f'DeviceId="vod-backend", Version="1.0.0", Token="{settings.JELLYFIN_API_KEY}"'
+        ),
+    }
+
+    client = httpx.AsyncClient(timeout=30)
+    try:
+        request = client.build_request("GET", img_url, headers=headers)
+        upstream = await client.send(request, stream=True)
+
+        if upstream.status_code >= 400:
+            body = await upstream.aread()
+            logger.error(
+                "Image proxy error %s for item %s type %s: %s",
+                upstream.status_code, item_id, image_type, body[:300],
+            )
+            await client.aclose()
+            return Response(status_code=status.HTTP_502_BAD_GATEWAY, content="Image unavailable")
+
+        media_type = upstream.headers.get("content-type", "image/jpeg")
+        response_headers = {}
+        for h in ("content-length", "cache-control", "etag"):
+            if h in upstream.headers:
+                response_headers[h] = upstream.headers[h]
+        # Cache images aggressively — they rarely change
+        if "cache-control" not in response_headers:
+            response_headers["Cache-Control"] = "public, max-age=86400"
+
+        async def _stream():
+            try:
+                async for chunk in upstream.aiter_bytes(chunk_size=65536):
+                    yield chunk
+            finally:
+                await client.aclose()
+
+        return StreamingResponse(
+            _stream(),
+            status_code=upstream.status_code,
+            media_type=media_type,
+            headers=response_headers,
+        )
+    except Exception:
+        await client.aclose()
+        raise
+
+
+@router.get("/landing")
+async def get_landing_data():
+    """
+    Public endpoint for the landing page — returns movie data without requiring auth.
+    Uses the server API key to fetch:
+    1. A batch of movies (for poster collage background)
+    2. Top 10 trending/highest-rated movies
+    This enables the Netflix-style hero collage and Top 10 section on the landing page.
+    """
+    from app.config import settings
+
+    headers = {
+        "X-Emby-Authorization": (
+            f'MediaBrowser Client="VOD Platform", Device="Server", '
+            f'DeviceId="vod-backend", Version="1.0.0", Token="{settings.JELLYFIN_API_KEY}"'
+        ),
+    }
+
+    async with httpx.AsyncClient(timeout=20) as client:
+        # 1) Fetch movies for poster collage (recently added, limit 20)
+        collage_params = {
+            "IncludeItemTypes": "Movie",
+            "SortBy": "DateCreated",
+            "SortOrder": "Descending",
+            "Recursive": True,
+            "Limit": 20,
+            "Fields": "ImageTags",
+            "ImageTypeLimit": 1,
+        }
+        collage_resp = await client.get(
+            f"{settings.JELLYFIN_SERVER_URL}/Items",
+            params=collage_params,
+            headers=headers,
+        )
+
+        # 2) Fetch top rated movies for Trending section
+        trending_params = {
+            "IncludeItemTypes": "Movie",
+            "SortBy": "CommunityRating",
+            "SortOrder": "Descending",
+            "Recursive": True,
+            "Limit": 10,
+            "Fields": "Overview,ImageTags,RunTimeTicks,CommunityRating,ProductionYear",
+            "ImageTypeLimit": 1,
+        }
+        trending_resp = await client.get(
+            f"{settings.JELLYFIN_SERVER_URL}/Items",
+            params=trending_params,
+            headers=headers,
+        )
+
+    collage_items = []
+    if collage_resp.is_success:
+        data = collage_resp.json()
+        collage_items = [
+            {
+                "Id": item["Id"],
+                "Name": item.get("Name", ""),
+                "ImageTags": item.get("ImageTags", {}),
+                "Type": item.get("Type", "Movie"),
+            }
+            for item in (data.get("Items", []) if isinstance(data, dict) else [])
+            if item.get("ImageTags", {}).get("Primary")
+        ]
+
+    trending_items = []
+    if trending_resp.is_success:
+        data = trending_resp.json()
+        trending_items = [
+            {
+                "Id": item["Id"],
+                "Name": item.get("Name", ""),
+                "Overview": item.get("Overview", ""),
+                "ImageTags": item.get("ImageTags", {}),
+                "CommunityRating": item.get("CommunityRating"),
+                "ProductionYear": item.get("ProductionYear"),
+                "RunTimeTicks": item.get("RunTimeTicks"),
+                "Type": item.get("Type", "Movie"),
+            }
+            for item in (data.get("Items", []) if isinstance(data, dict) else [])
+            if item.get("ImageTags", {}).get("Primary")
+        ]
+
+    return {
+        "collage": collage_items,
+        "trending": trending_items,
+    }
+
+
 @router.get("/search")
 async def search(
     query: str = Query(..., min_length=1),

@@ -1,18 +1,10 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-
-const JELLYFIN_BASE = import.meta.env.VITE_JELLYFIN_URL || ''
+import { getProxiedImageUrl } from '../../lib/api'
 
 function getJellyfinImageUrl(itemId, type, index = null, width = 1920) {
-  if (!JELLYFIN_BASE) return null
-  const token = localStorage.getItem('jellyfin_token')
-  const path = index !== null
-    ? `${JELLYFIN_BASE}/Items/${itemId}/Images/${type}/${index}`
-    : `${JELLYFIN_BASE}/Items/${itemId}/Images/${type}`
-  const params = new URLSearchParams({ width, quality: 85 })
-  if (token) params.set('api_key', token)
-  return `${path}?${params}`
+  return getProxiedImageUrl(itemId, type, width, 85, index)
 }
 
 function truncate(str, n) {

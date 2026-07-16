@@ -9,34 +9,75 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.svg', 'pwa-icon.svg'],
+      includeAssets: ['favicon.png', 'pwa-icon.svg', 'icon-192x192.png', 'icon-512x512.png'],
       manifest: {
-        name: 'StreamX',
+        name: 'StreamX — Premium Streaming',
         short_name: 'StreamX',
-        description: 'Premium on-demand streaming',
+        description: 'Stream your personal Jellyfin media collection from anywhere. Unlimited movies & TV shows.',
         theme_color: '#09090b',
         background_color: '#09090b',
         display: 'standalone',
-        orientation: 'portrait',
+        display_override: ['window-controls-overlay', 'standalone', 'minimal-ui'],
+        orientation: 'any',
         start_url: '/browse',
         scope: '/',
-        icons: [
+        lang: 'en',
+        categories: ['entertainment', 'video', 'streaming'],
+        shortcuts: [
           {
-            src: 'pwa-icon.svg',
-            sizes: '512x512',
-            type: 'image/svg+xml',
-            purpose: 'any maskable',
+            name: 'Browse Movies',
+            short_name: 'Movies',
+            description: 'Browse your movie collection',
+            url: '/browse/movies',
+            icons: [{ src: 'icon-192x192.png', sizes: '192x192' }],
           },
           {
-            src: 'pwa-icon.svg',
+            name: 'Browse TV Shows',
+            short_name: 'TV Shows',
+            description: 'Browse your TV show collection',
+            url: '/browse/shows',
+            icons: [{ src: 'icon-192x192.png', sizes: '192x192' }],
+          },
+          {
+            name: 'Watchlist',
+            short_name: 'Watchlist',
+            description: 'View your watchlist',
+            url: '/browse/watchlist',
+            icons: [{ src: 'icon-192x192.png', sizes: '192x192' }],
+          },
+        ],
+        screenshots: [],
+        icons: [
+          {
+            src: 'icon-192x192.png',
             sizes: '192x192',
-            type: 'image/svg+xml',
-            purpose: 'any maskable',
+            type: 'image/png',
+            purpose: 'any',
+          },
+          {
+            src: 'icon-192x192.png',
+            sizes: '192x192',
+            type: 'image/png',
+            purpose: 'maskable',
+          },
+          {
+            src: 'icon-512x512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'any',
+          },
+          {
+            src: 'icon-512x512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'maskable',
           },
         ],
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,json}'],
+        navigateFallback: '/index.html',
+        navigateFallbackDenylist: [/^\/api\//, /^\/auth\//],
         runtimeCaching: [
           {
             urlPattern: /^https?:\/\/.*\.(?:mp4|webm|ogg|m3u8)/i,
@@ -46,6 +87,18 @@ export default defineConfig({
               expiration: {
                 maxEntries: 20,
                 maxAgeSeconds: 60 * 60 * 24 * 7,
+              },
+            },
+          },
+          {
+            // Cache all API image requests
+            urlPattern: /\/api\/media\/(?:image|public-image)\/[a-f0-9]+/i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'image-cache',
+              expiration: {
+                maxEntries: 100,
+                maxAgeSeconds: 60 * 60 * 24 * 30,
               },
             },
           },

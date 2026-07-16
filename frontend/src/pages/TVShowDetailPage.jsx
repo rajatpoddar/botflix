@@ -1,24 +1,16 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { mediaAPI } from '../lib/api'
+import { mediaAPI, getProxiedImageUrl } from '../lib/api'
 import Navbar from '../components/layout/Navbar'
 
-const JELLYFIN_BASE = import.meta.env.VITE_JELLYFIN_URL || ''
-
 function getImageUrl(itemId, tag, width = 300) {
-  if (!JELLYFIN_BASE || !tag) return null
-  const token = localStorage.getItem('jellyfin_token')
-  const params = new URLSearchParams({ width, quality: 90 })
-  if (token) params.set('api_key', token)
-  return `${JELLYFIN_BASE}/Items/${itemId}/Images/Primary?${params}`
+  if (!tag) return null
+  return getProxiedImageUrl(itemId, 'Primary', width, 90)
 }
 
 function getBackdropUrl(itemId, tag, width = 1280) {
-  if (!JELLYFIN_BASE || !tag) return null
-  const token = localStorage.getItem('jellyfin_token')
-  const params = new URLSearchParams({ width, quality: 85 })
-  if (token) params.set('api_key', token)
-  return `${JELLYFIN_BASE}/Items/${itemId}/Images/Backdrop?${params}`
+  if (!tag) return null
+  return getProxiedImageUrl(itemId, 'Backdrop', width, 85)
 }
 
 function formatRuntime(ticks) {

@@ -16,6 +16,7 @@ import MovieDetailPage from './pages/MovieDetailPage'
 import ProfilePage from './pages/ProfilePage'
 import WatchlistPage from './pages/WatchlistPage'
 import CollectionDetailPage from './pages/CollectionDetailPage'
+import OfflinePage from './pages/OfflinePage'
 
 export default function App() {
   return (
@@ -38,6 +39,9 @@ export default function App() {
         <Route path="/search" element={<ProtectedRoute><SearchPage /></ProtectedRoute>} />
         <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
         <Route path="/browse/watchlist" element={<ProtectedRoute><WatchlistPage /></ProtectedRoute>} />
+
+        {/* PWA offline fallback */}
+        <Route path="/offline" element={<OfflinePage />} />
 
         {/* Fallback */}
         <Route path="*" element={<Navigate to="/" replace />} />

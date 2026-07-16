@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
+import { mediaAPI, getPublicImageUrl } from '../lib/api'
 
 const features = [
   {
@@ -52,9 +53,126 @@ const faqs = [
   { q: 'What devices are supported?', a: 'StreamX works on any modern browser — desktop, tablet, and mobile. No app downloads needed.' },
 ]
 
+function PosterCollage({ items = [] }) {
+  // Need at least a few items for a good collage effect
+  if (items.length < 4) return null
+
+  // Create rows of posters with staggered animation
+  const rowCount = 4
+  const postersPerRow = Math.ceil(items.length / rowCount)
+  const rows = []
+  for (let i = 0; i < rowCount; i++) {
+    rows.push(items.slice(i * postersPerRow, (i + 1) * postersPerRow))
+  }
+
+  return (
+    <div className="absolute inset-0 overflow-hidden">
+      {/* Dark gradient overlays for edges */}
+      <div className="absolute inset-0 z-[3] bg-gradient-to-r from-zinc-950 via-transparent to-zinc-950" />
+      <div className="absolute inset-0 z-[3] bg-gradient-to-t from-zinc-950 via-zinc-950/60 to-zinc-950/80" />
+
+      <div className="absolute inset-0 flex flex-col gap-3 sm:gap-4 opacity-40 scale-110">
+        {rows.map((row, rowIdx) => (
+          <motion.div
+            key={rowIdx}
+            className="flex gap-3 sm:gap-4"
+            initial={{ x: rowIdx % 2 === 0 ? '-5%' : '5%' }}
+            animate={{
+              x: rowIdx % 2 === 0 ? ['-5%', '-15%', '-5%'] : ['5%', '15%', '5%'],
+            }}
+            transition={{
+              duration: 20 + rowIdx * 3,
+              repeat: Infinity,
+              ease: 'linear',
+            }}
+          >
+            {row.map((item) => (
+              <div
+                key={item.Id}
+                className="flex-shrink-0 w-28 sm:w-36 aspect-[2/3] rounded-lg overflow-hidden shadow-lg"
+              >
+                <img
+                  src={getPublicImageUrl(item.Id, 'Primary', 200, 80)}
+                  alt=""
+                  className="w-full h-full object-cover"
+                  loading="lazy"
+                />
+              </div>
+            ))}
+            {/* Duplicate for seamless scroll */}
+            {row.map((item) => (
+              <div
+                key={`dup-${item.Id}`}
+                className="flex-shrink-0 w-28 sm:w-36 aspect-[2/3] rounded-lg overflow-hidden shadow-lg"
+              >
+                <img
+                  src={getPublicImageUrl(item.Id, 'Primary', 200, 80)}
+                  alt=""
+                  className="w-full h-full object-cover"
+                  loading="lazy"
+                />
+              </div>
+            ))}
+          </motion.div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function Top10Card({ item, rank, onClick }) {
+  return (
+    <motion.div
+      onClick={onClick}
+      initial={{ opacity: 0, y: 20 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, margin: '-30px' }}
+      transition={{ delay: rank * 0.08 }}
+      className="group relative flex-shrink-0 w-36 sm:w-40 cursor-pointer"
+    >
+      {/* Rank number behind poster */}
+      <div className="absolute -left-2 bottom-0 text-[80px] sm:text-[100px] font-black leading-none text-zinc-600/40 select-none"
+        style={{ WebkitTextStroke: '1px rgba(255,255,255,0.12)' }}
+      >
+        {rank}
+      </div>
+
+      <div className="relative ml-6 sm:ml-8 aspect-[2/3] rounded-lg overflow-hidden bg-zinc-800 shadow-xl
+        transition-transform duration-300 group-hover:scale-105 group-hover:z-10">
+        <img
+          src={getPublicImageUrl(item.Id, 'Primary', 300, 85)}
+          alt={item.Name}
+          className="w-full h-full object-cover"
+          loading="lazy"
+        />
+        {/* Hover overlay */}
+        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors duration-200 flex items-center justify-center">
+          <div className="w-10 h-10 rounded-full bg-white/90 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+            <svg className="w-4 h-4 text-zinc-900 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M8 5v14l11-7z" />
+            </svg>
+          </div>
+        </div>
+      </div>
+
+      {/* Rating badge */}
+      {item.CommunityRating && (
+        <div className="absolute top-1 right-1 sm:right-2 z-10 bg-black/70 rounded px-1 py-0.5 text-[10px] font-medium flex items-center gap-0.5">
+          <svg className="w-2.5 h-2.5 text-yellow-400" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+          </svg>
+          {item.CommunityRating.toFixed(1)}
+        </div>
+      )}
+    </motion.div>
+  )
+}
+
 export default function LandingPage() {
   const navigate = useNavigate()
   const [scrolled, setScrolled] = useState(false)
+  const [landingData, setLandingData] = useState({ collage: [], trending: [] })
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 50)
@@ -62,16 +180,34 @@ export default function LandingPage() {
     return () => window.removeEventListener('scroll', onScroll)
   }, [])
 
+  // Fetch movie data for the landing page
+  useEffect(() => {
+    async function fetchLandingData() {
+      try {
+        const res = await mediaAPI.getLandingData()
+        setLandingData(res.data)
+      } catch {
+        // Landing page works even without data
+      } finally {
+        setLoading(false)
+      }
+    }
+    fetchLandingData()
+  }, [])
+
   const scrollToPricing = () => {
     document.getElementById('pricing')?.scrollIntoView({ behavior: 'smooth' })
   }
+
+  const collageItems = landingData.collage || []
+  const trendingItems = landingData.trending || []
 
   return (
     <div className="min-h-screen bg-zinc-950 text-white overflow-x-hidden">
       {/* ── Navbar ── */}
       <motion.nav
         className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
-          scrolled ? 'bg-zinc-950/95 backdrop-blur-md shadow-lg' : 'bg-transparent'
+          scrolled ? 'bg-zinc-950/95 backdrop-blur-md shadow-lg' : 'bg-gradient-to-b from-zinc-950/80 to-transparent'
         }`}
         initial={{ y: -80 }}
         animate={{ y: 0 }}
@@ -100,34 +236,39 @@ export default function LandingPage() {
         </div>
       </motion.nav>
 
-      {/* ── Hero ── */}
+      {/* ── Hero with Netflix-style Poster Collage ── */}
       <section className="relative min-h-screen flex items-center justify-center overflow-hidden">
-        {/* Background gradient + overlay */}
-        <div className="absolute inset-0 bg-gradient-to-br from-zinc-900 via-zinc-950 to-violet-950" />
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-violet-900/30 via-transparent to-transparent" />
+        {/* Poster Collage Background */}
+        {!loading && collageItems.length > 0 ? (
+          <PosterCollage items={collageItems} />
+        ) : (
+          <>
+            <div className="absolute inset-0 bg-gradient-to-br from-zinc-900 via-zinc-950 to-violet-950" />
+            <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-violet-900/30 via-transparent to-transparent" />
+            <div className="absolute inset-0 opacity-[0.03]"
+              style={{
+                backgroundImage: 'linear-gradient(rgba(255,255,255,.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.1) 1px, transparent 1px)',
+                backgroundSize: '60px 60px',
+              }}
+            />
+          </>
+        )}
 
-        {/* Animated grid backdrop */}
-        <div className="absolute inset-0 opacity-[0.03]"
-          style={{
-            backgroundImage: 'linear-gradient(rgba(255,255,255,.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.1) 1px, transparent 1px)',
-            backgroundSize: '60px 60px',
-          }}
-        />
-
+        {/* Content */}
         <div className="relative z-10 max-w-5xl mx-auto px-4 text-center">
           <motion.div
             initial={{ opacity: 0, y: 40 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.7 }}
           >
-            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-violet-500/10 border border-violet-500/20 text-violet-400 text-xs font-medium mb-6">
+            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-violet-500/10 border border-violet-500/20 text-violet-400 text-xs font-medium mb-6 backdrop-blur-sm">
               <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" />
               </svg>
               Unlimited streaming. Zero ads.
             </div>
 
-            <h1 className="text-4xl sm:text-6xl lg:text-7xl font-black tracking-tight leading-tight">
+            <h1 className="text-4xl sm:text-6xl lg:text-7xl font-black tracking-tight leading-tight drop-shadow-lg">
               Unlimited{' '}
               <span className="bg-gradient-to-r from-violet-400 to-violet-600 bg-clip-text text-transparent">
                 Movies & TV
@@ -136,7 +277,7 @@ export default function LandingPage() {
               At Your Fingertips
             </h1>
 
-            <p className="mt-6 text-lg sm:text-xl text-zinc-400 max-w-2xl mx-auto leading-relaxed">
+            <p className="mt-6 text-lg sm:text-xl text-zinc-300 max-w-2xl mx-auto leading-relaxed drop-shadow-md">
               Stream your personal media collection from anywhere. Start your{' '}
               <span className="text-white font-semibold">7-day free trial</span> today.
             </p>
@@ -150,27 +291,59 @@ export default function LandingPage() {
               </button>
               <button
                 onClick={scrollToPricing}
-                className="bg-zinc-800/80 hover:bg-zinc-700 text-white font-semibold px-10 py-4 rounded-xl text-lg border border-zinc-700 transition-all active:scale-95"
+                className="bg-zinc-800/80 hover:bg-zinc-700 text-white font-semibold px-10 py-4 rounded-xl text-lg border border-zinc-700 transition-all active:scale-95 backdrop-blur-sm"
               >
                 See Plans
               </button>
             </div>
 
-            <p className="mt-4 text-xs text-zinc-600">No credit card required. Cancel anytime.</p>
+            <p className="mt-4 text-xs text-zinc-500">No credit card required. Cancel anytime.</p>
           </motion.div>
         </div>
 
         {/* Scroll indicator */}
         <motion.div
-          className="absolute bottom-8 left-1/2 -translate-x-1/2"
+          className="absolute bottom-8 left-1/2 -translate-x-1/2 z-10"
           animate={{ y: [0, 8, 0] }}
           transition={{ duration: 2, repeat: Infinity }}
         >
-          <svg className="w-6 h-6 text-zinc-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <svg className="w-6 h-6 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
           </svg>
         </motion.div>
       </section>
+
+      {/* ── Top 10 Trending Movies ── */}
+      {trendingItems.length > 0 && (
+        <section className="relative py-16 sm:py-24 bg-gradient-to-b from-zinc-950 via-zinc-950 to-zinc-900/50">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, margin: '-50px' }}
+              className="flex items-center gap-4 mb-10"
+            >
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-violet-500 animate-pulse" />
+                <h2 className="text-2xl sm:text-3xl font-black tracking-tight">Top 10 Trending</h2>
+              </div>
+              <div className="hidden sm:flex-1 sm:flex h-px bg-gradient-to-r from-zinc-800 to-transparent" />
+            </motion.div>
+
+            {/* Horizontal scrollable row */}
+            <div className="relative">
+              <div className="flex gap-4 overflow-x-auto no-scrollbar pb-4 -mx-4 px-4 sm:mx-0 sm:px-0">
+                {trendingItems.map((item, i) => (
+                  <Top10Card key={item.Id} item={item} rank={i + 1} onClick={() => navigate('/signup')} />
+                ))}
+              </div>
+              {/* Fade edges */}
+              <div className="absolute top-0 left-0 bottom-4 w-8 bg-gradient-to-r from-zinc-950 to-transparent pointer-events-none sm:hidden" />
+              <div className="absolute top-0 right-0 bottom-4 w-8 bg-gradient-to-l from-zinc-950 to-transparent pointer-events-none sm:hidden" />
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* ── Features ── */}
       <section className="relative py-24 sm:py-32">
@@ -227,7 +400,6 @@ export default function LandingPage() {
             viewport={{ once: true, margin: '-50px' }}
             className="relative rounded-3xl border border-violet-500/30 bg-gradient-to-b from-violet-950/30 to-zinc-950/80 p-8 sm:p-10 shadow-2xl shadow-violet-900/20"
           >
-            {/* Popular badge */}
             <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-4 py-1 rounded-full bg-violet-600 text-white text-xs font-semibold">
               MOST POPULAR
             </div>
