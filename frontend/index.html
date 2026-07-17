@@ -2,20 +2,92 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/png" href="/favicon.png" />
-    <link rel="apple-touch-icon" href="/favicon.png" />
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" sizes="96x96" href="/favicon-96x96.png" />
+    <link rel="icon" type="image/png" sizes="48x48" href="/favicon.png" />
+    <link rel="shortcut icon" href="/favicon.png" />
+
+    <!-- Apple Touch Icon -->
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <link rel="apple-touch-icon" sizes="192x192" href="/icon-192x192.png" />
     <link rel="apple-touch-icon" sizes="512x512" href="/icon-512x512.png" />
+
+    <!-- PWA Manifest -->
     <link rel="manifest" href="/manifest.webmanifest" />
+
+    <!-- Primary Meta Tags -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="description" content="StreamX — Stream your personal Jellyfin media collection from anywhere. Unlimited movies & TV shows." />
+    <meta name="title" content="StreamX — Premium Personal Media Streaming" />
+    <meta name="description" content="StreamX brings a premium Netflix-style streaming experience to your personal Jellyfin media library. Exclusive for nregabot.com users. Unlimited movies & TV shows. Zero ads." />
+    <meta name="keywords" content="streaming, Jellyfin, media server, personal streaming, movies, TV shows, nregabot, video streaming, media library" />
+    <meta name="author" content="CabelWala" />
     <meta name="theme-color" content="#09090b" />
+    <meta name="robots" content="index, follow" />
+    <meta name="googlebot" content="index, follow, max-snippet:-1, max-image-preview:large" />
+    <link rel="canonical" href="https://streamx.cabelwala.com" />
+
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://streamx.cabelwala.com" />
+    <meta property="og:site_name" content="StreamX" />
+    <meta property="og:title" content="StreamX — Premium Personal Media Streaming" />
+    <meta property="og:description" content="StreamX brings a premium Netflix-style streaming experience to your personal Jellyfin media library. Exclusive for nregabot.com users." />
+    <meta property="og:image" content="https://streamx.cabelwala.com/og-image.png" />
+    <meta property="og:locale" content="en_IN" />
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:url" content="https://streamx.cabelwala.com" />
+    <meta name="twitter:title" content="StreamX — Premium Personal Media Streaming" />
+    <meta name="twitter:description" content="StreamX brings a premium Netflix-style streaming experience to your personal Jellyfin media library. Exclusive for nregabot.com users." />
+    <meta name="twitter:image" content="https://streamx.cabelwala.com/og-image.png" />
+
+    <!-- PWA -->
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="StreamX" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="application-name" content="StreamX" />
-    <title>StreamX</title>
+
+    <!-- JSON-LD Structured Data -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "StreamX",
+      "url": "https://streamx.cabelwala.com",
+      "description": "Premium streaming interface for personal Jellyfin media libraries. Exclusive for nregabot.com users.",
+      "applicationCategory": "Multimedia",
+      "operatingSystem": "All",
+      "browserRequirements": "Requires modern browser",
+      "author": {
+        "@type": "Organization",
+        "name": "CabelWala",
+        "url": "https://nregabot.com"
+      },
+      "offers": {
+        "@type": "Offer",
+        "price": "49",
+        "priceCurrency": "INR",
+        "description": "Monthly subscription after 7-day free trial"
+      },
+      "featureList": [
+        "Unlimited movie streaming",
+        "TV show streaming",
+        "Cross-device sync",
+        "Personal media library",
+        "Jellyfin integration",
+        "Ad-free experience"
+      ]
+    }
+    </script>
+
+    <title>StreamX — Premium Personal Media Streaming</title>
+
+    <!-- Google Identity Services -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+
+    <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />

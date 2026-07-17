@@ -40,6 +40,7 @@ class LoginResponse(BaseModel):
     jellyfin_user_id: str
     username: str
     email: str
+    avatar_url: str | None = None
 
 
 class ForgotPasswordRequest(BaseModel):
@@ -56,6 +57,12 @@ class ResetPasswordRequest(BaseModel):
         if len(v) < 8:
             raise ValueError("Password must be at least 8 characters")
         return v
+
+
+class GoogleLoginRequest(BaseModel):
+    """ID token from Google Identity Services."""
+    credential: str
+    client_id: str | None = None
 
 
 # ── User ──────────────────────────────────────────────────────────────────────
@@ -79,6 +86,20 @@ class SubscriptionStatus(BaseModel):
     days_remaining: int | None = None
 
     model_config = {"from_attributes": True}
+
+
+# ── Razorpay / Payments ───────────────────────────────────────────────────────
+
+class RazorpayCreateSubscriptionResponse(BaseModel):
+    subscription_id: str
+    short_url: str
+    status: str
+
+
+class RazorpayVerifyRequest(BaseModel):
+    razorpay_payment_id: str
+    razorpay_subscription_id: str
+    razorpay_signature: str
 
 
 # ── Generic ───────────────────────────────────────────────────────────────────

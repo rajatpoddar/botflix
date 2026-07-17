@@ -14,10 +14,30 @@ function extractAudioTracks(item) {
     .sort((a, b) => (a.Index ?? 0) - (b.Index ?? 0))
     .map((s) => ({
       index: s.Index ?? 0,
-      language: s.Language || '',
-      displayTitle: s.DisplayTitle || `Audio ${(s.Index ?? 0) + 1}`,
+      language: s.Language || 'Unknown',
+      // Show just the language name, not the full technical title
+      displayTitle: s.Language || `Track ${(s.Index ?? 0) + 1}`,
     }))
 }
+
+/**
+ * Extract subtitle tracks from an item's MediaStreams array.
+ * Returns [{ index, language, label, url }] sorted by Index.
+ */
+function extractSubtitleTracks(item, itemId) {
+  if (!item?.MediaStreams) return []
+  const baseUrl = import.meta.env.VITE_API_URL || ''
+  const token = localStorage.getItem('access_token') || ''
+  return item.MediaStreams
+    .filter((s) => s.Type === 'Subtitle')
+    .sort((a, b) => (a.Index ?? 0) - (b.Index ?? 0))
+    .map((s) => ({
+      index: s.Index ?? 0,
+      language: s.Language || '',
+      // Show just the language name, not the full technical title
+      label: s.Language || `Subtitle ${(s.Index ?? 0) + 1}`,
+      url: `${baseUrl}/api/media/subtitles/${itemId}/${s.Index ?? 0}?token=${token}`,
+    }))}
 
 export default function WatchPage() {
   const { id } = useParams()
@@ -52,8 +72,12 @@ export default function WatchPage() {
 
   // Switch audio track — rebuild the HLS manifest URL with the selected
   // AudioStreamIndex. The player re-seeks to currentPosition after reload.
+  // _t cache-buster ensures a fresh manifest (avoids stale audio track).
   const switchAudio = useCallback(async (index, currentPosition) => {
-    const hlsUrl = mediaAPI.getHlsUrl(id, { audio_stream_index: index })
+    const hlsUrl = mediaAPI.getHlsUrl(id, {
+      audio_stream_index: index,
+      _t: Date.now(),
+    })
     setStreamUrl(hlsUrl)
     setAudioIndex(index)
     return hlsUrl
@@ -102,8 +126,9 @@ export default function WatchPage() {
     )
   }
 
-  // Extract audio tracks from item metadata
+  // Extract audio & subtitle tracks from item metadata
   const audioTracks = extractAudioTracks(item)
+  const subtitleTracks = extractSubtitleTracks(item, id)
 
   // Calculate resume position from UserData (if the item was partially watched).
   // If ?fresh=1 is present, override to 0 (start from beginning).
@@ -124,6 +149,7 @@ export default function WatchPage() {
           initialPosition={initialPosition}
           durationFromMeta={item?.RunTimeTicks ? Math.floor(item.RunTimeTicks / 10_000_000) : undefined}
           audioTracks={audioTracks}
+          subtitleTracks={subtitleTracks}
           activeAudioIndex={audioIndex}
           onSwitchAudio={switchAudio}
           onBack={() => {

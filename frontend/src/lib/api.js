@@ -16,14 +16,10 @@ api.interceptors.request.use((config) => {
   return config
 })
 
-// Auto-logout on 401
+// Don't auto-logout on 401 — user stays logged in until they manually log out.
 api.interceptors.response.use(
   (res) => res,
   (err) => {
-    if (err.response?.status === 401) {
-      localStorage.clear()
-      window.location.href = '/login'
-    }
     return Promise.reject(err)
   }
 )
@@ -32,6 +28,7 @@ api.interceptors.response.use(
 export const authAPI = {
   register: (data) => api.post('/auth/register', data),
   login: (data) => api.post('/auth/login', data),
+  googleLogin: (credential) => api.post('/auth/google', { credential }),
   forgotPassword: (email) => api.post('/auth/forgot-password', { email }),
   resetPassword: (token, new_password) =>
     api.post('/auth/reset-password', { token, new_password }),

@@ -1,9 +1,11 @@
-export function saveSession({ access_token, jellyfin_token, jellyfin_user_id, username, email }) {
+export function saveSession({ access_token, jellyfin_token, jellyfin_user_id, username, email, avatar_url }) {
   localStorage.setItem('access_token', access_token)
   localStorage.setItem('jellyfin_token', jellyfin_token)
   localStorage.setItem('jellyfin_user_id', jellyfin_user_id)
   localStorage.setItem('username', username)
   if (email) localStorage.setItem('email', email)
+  if (avatar_url) localStorage.setItem('avatar_url', avatar_url)
+  else localStorage.removeItem('avatar_url')
 }
 
 export function clearSession() {
@@ -12,6 +14,7 @@ export function clearSession() {
   localStorage.removeItem('jellyfin_user_id')
   localStorage.removeItem('username')
   localStorage.removeItem('email')
+  localStorage.removeItem('avatar_url')
 }
 
 export function isAuthenticated() {
@@ -28,4 +31,8 @@ export function getJellyfinToken() {
 
 export function getJellyfinUserId() {
   return localStorage.getItem('jellyfin_user_id') || ''
+}
+
+export function getAvatarUrl() {
+  return localStorage.getItem('avatar_url') || ''
 }

@@ -2,10 +2,12 @@ import { useState, useEffect } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAuth } from '../../contexts/AuthContext'
+import { useDownloads } from '../../contexts/DownloadContext'
 import InstallPWA from '../InstallPWA'
 
 export default function Navbar() {
   const { user, logout } = useAuth()
+  const { activeCount } = useDownloads()
   const navigate = useNavigate()
   const location = useLocation()
   const [scrolled, setScrolled] = useState(false)
@@ -130,9 +132,18 @@ export default function Navbar() {
                 onClick={() => setMenuOpen(!menuOpen)}
                 className="flex items-center gap-2 p-1 rounded-md hover:bg-zinc-800 transition-colors"
               >
-                <div className="w-8 h-8 rounded-md bg-violet-600 flex items-center justify-center text-xs font-bold uppercase">
-                  {user?.username?.[0] || 'U'}
-                </div>
+                {user?.avatar_url ? (
+                  <img
+                    src={user.avatar_url}
+                    alt=""
+                    className="w-8 h-8 rounded-md object-cover"
+                    referrerPolicy="no-referrer"
+                  />
+                ) : (
+                  <div className="w-8 h-8 rounded-md bg-violet-600 flex items-center justify-center text-xs font-bold uppercase">
+                    {user?.username?.[0] || 'U'}
+                  </div>
+                )}
                 <svg className={`w-4 h-4 text-zinc-400 transition-transform ${menuOpen ? 'rotate-180' : ''}`}
                   fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -162,6 +173,21 @@ export default function Navbar() {
                           d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                       </svg>
                       Profile
+                    </button>
+                    <button
+                      onClick={() => { setMenuOpen(false); navigate('/browse/downloads') }}
+                      className="w-full text-left px-4 py-3 text-sm text-zinc-300 hover:bg-zinc-800 transition-colors flex items-center gap-2 relative"
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                          d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                      </svg>
+                      Downloads
+                      {activeCount > 0 && (
+                        <span className="absolute right-3 w-5 h-5 rounded-full bg-violet-600 text-[10px] font-bold flex items-center justify-center">
+                          {activeCount}
+                        </span>
+                      )}
                     </button>
                     <button
                       onClick={logout}

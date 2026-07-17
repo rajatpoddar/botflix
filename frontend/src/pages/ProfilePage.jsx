@@ -13,6 +13,7 @@ export default function ProfilePage() {
 
   const username = localStorage.getItem('username') || 'User'
   const email = localStorage.getItem('email') || '—'
+  const avatarUrl = localStorage.getItem('avatar_url') || ''
 
   useEffect(() => {
     async function load() {
@@ -41,9 +42,18 @@ export default function ProfilePage() {
         <div className="max-w-3xl mx-auto px-4 sm:px-6">
           <div className="flex items-center gap-5">
             {/* Avatar */}
-            <div className="w-16 h-16 rounded-2xl bg-violet-600 flex items-center justify-center text-2xl font-bold uppercase shadow-xl shadow-violet-900/30">
-              {username[0]}
-            </div>
+            {avatarUrl ? (
+              <img
+                src={avatarUrl}
+                alt={username}
+                className="w-16 h-16 rounded-2xl object-cover shadow-xl shadow-violet-900/30"
+                referrerPolicy="no-referrer"
+              />
+            ) : (
+              <div className="w-16 h-16 rounded-2xl bg-violet-600 flex items-center justify-center text-2xl font-bold uppercase shadow-xl shadow-violet-900/30">
+                {username[0]}
+              </div>
+            )}
             <div>
               <h1 className="text-2xl font-bold">{username}</h1>
               <p className="text-sm text-zinc-400">{email}</p>

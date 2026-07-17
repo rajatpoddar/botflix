@@ -33,20 +33,6 @@ function clamp(val, min, max) {
   return Math.min(max, Math.max(min, val))
 }
 
-/** Read text tracks from a <video> element (widely supported) */
-function getSubTracksFromVideo(videoEl) {
-  const subs = []
-  if (videoEl.textTracks) {
-    for (let i = 0; i < videoEl.textTracks.length; i++) {
-      const t = videoEl.textTracks[i]
-      if (t.kind === 'subtitles' || t.kind === 'captions') {
-        subs.push({ id: t.id || String(i), label: t.label || `Subtitle ${i + 1}`, language: t.language, index: i })
-      }
-    }
-  }
-  return subs
-}
-
 export default function VideoPlayer({
   src,
   title,
@@ -57,6 +43,7 @@ export default function VideoPlayer({
   initialPosition,
   durationFromMeta,
   audioTracks = [],
+  subtitleTracks = [],
   activeAudioIndex = 0,
   onSwitchAudio,
 }) {
@@ -160,8 +147,7 @@ export default function VideoPlayer({
   // Seek gesture state
   const seekGestureRef = useRef(null) // { startCurrentTime, startClientX }
 
-  // Tracks — audio from props, subs from video element
-  const [subTracks, setSubTracks] = useState([])
+  // Tracks — audio & subtitles from props
   const [activeSub, setActiveSub] = useState(null) // null = off
   const [showTrackMenu, setShowTrackMenu] = useState(false) // 'audio' | 'sub' | false
 
@@ -247,16 +233,44 @@ export default function VideoPlayer({
     }
   }, [])
 
-  // ── Brightness ────────────────────────────────────────────────────────────
+  // ── Brightness / Dim overlay ─────────────────────────────────────────────
+  //
+  // The phone's *system* brightness can't be changed from a web browser —
+  // no standard API exists on iOS or Android for that.
+  // We simulate dimming with two complementary effects:
+  //   1) CSS filter (brightness) on the video wrapper — makes the video
+  //      appear dimmer/brighter.
+  //   2) A dark overlay (<div> with variable opacity) on top of the video
+  //      — gives a convincing "screen dimming" feel even when the system
+  //      brightness stays fixed.
+  //
+  // brightness range: 0.3 (most dim) … 1.0 (normal) … 1.5 (brightened)
+  const BRIGHTNESS_MIN = 0.3
+  const BRIGHTNESS_MAX = 1.5
+  const BRIGHTNESS_DEFAULT = 1.0
 
   const changeBrightness = useCallback((delta) => {
     setBrightness((prev) => {
-      const newVal = clamp(prev + delta, 0.3, 1.5)
+      const newVal = clamp(prev + delta, BRIGHTNESS_MIN, BRIGHTNESS_MAX)
       return newVal
     })
   }, [])
 
+  // Overlay opacity: 0 when brightness >= 1.0, ramps up to ~0.6 at min.
+  // This creates a smooth dimming effect that complements the CSS filter.
+  const dimOpacity = brightness < 1
+    ? (1 - brightness) / (1 - BRIGHTNESS_MIN) * 0.6
+    : 0
+
   // ── Touch Gestures (mobile brightness/volume) ─────────────────────────────
+  //
+  // Volume: adjusts HTMLMediaElement.volume (works on Android). On iOS the
+  // volume property is read-only — there's no workaround (AudioContext gain
+  // nodes are unreliable with HLS on iOS). The gesture indicator still shows
+  // the intended level as visual feedback.
+  //
+  // Brightness: simulated via CSS filter + dark overlay (see above). System
+  // brightness cannot be changed from a web browser on any mobile platform.
 
   const showGestureIndicator = useCallback((type, value) => {
     setGestureIndicator({ type, value })
@@ -330,18 +344,23 @@ export default function VideoPlayer({
 
     // ── Vertical swipe → brightness / volume ───────────────────────────
     if (isLeftSide) {
-      // Left side: brightness control
+      // Left side: brightness control (simulated via CSS filter + dark overlay)
       const deltaBrightness = (deltaY / rect.height) * 1.5
-      const newBrightness = clamp(startBrightness + deltaBrightness, 0.3, 1.5)
+      const newBrightness = clamp(startBrightness + deltaBrightness, BRIGHTNESS_MIN, BRIGHTNESS_MAX)
       setBrightness(newBrightness)
       showGestureIndicator('brightness', newBrightness)
     } else {
       // Right side: volume control
+      // HTMLMediaElement.volume works on Android; iOS Safari ignores it
       const v = videoRef.current
       if (!v) return
       const deltaVolume = (deltaY / rect.height) * 1.5
       const newVolume = clamp(startVolume + deltaVolume, 0, 1)
-      v.volume = newVolume
+      try {
+        v.volume = newVolume
+      } catch {
+        // iOS may throw when setting read-only volume — safe to ignore
+      }
       v.muted = newVolume === 0
       setVolume(newVolume)
       setMuted(newVolume === 0)
@@ -379,21 +398,100 @@ export default function VideoPlayer({
     pendingPlayRef.current = wasPlaying
   }, [onSwitchAudio])
 
-  // ── Subtitle track switching ──────────────────────────────────────────────
+  // ── Subtitle track switching (fetch + blob URL + <track>) ──────────────
+  //
+  // Strategy: manually fetch VTT via our proxy so we control the network
+  // request, then create a local blob URL and attach it via a dynamically
+  // created <track> element. This works because:
+  //   1) hls.js only overrides tracks from the HLS *manifest* — it won't
+  //      touch a track we added after init via appendChild.
+  //   2) The blob URL avoids any CORS/content-type issues.
+  //   3) <track> elements render correctly with MSE (unlike addTextTrack).
+  //
+  const subtitleTrackElRef = useRef(null)
+  const subtitleBlobUrlRef = useRef(null)
 
-  const switchSub = useCallback((index) => {
-    const v = videoRef.current
-    if (!v?.textTracks) return
-    for (let i = 0; i < v.textTracks.length; i++) {
-      v.textTracks[i].mode = i === index ? 'showing' : 'hidden'
+  // Helper: revoke the old blob URL & remove the old track element
+  function cleanupSubtitleTrack() {
+    if (subtitleTrackElRef.current) {
+      subtitleTrackElRef.current.remove()
+      subtitleTrackElRef.current = null
     }
-    setActiveSub(index)
+    if (subtitleBlobUrlRef.current) {
+      URL.revokeObjectURL(subtitleBlobUrlRef.current)
+      subtitleBlobUrlRef.current = null
+    }
+  }
+
+  const switchSub = useCallback(async (trackIndex) => {
+    const v = videoRef.current
+    if (!v) return
     setShowTrackMenu(false)
-  }, [])
+
+    // Clean up previous track
+    cleanupSubtitleTrack()
+
+    // Hide all other text tracks (hls.js native ones, etc.)
+    for (let i = 0; i < v.textTracks.length; i++) {
+      v.textTracks[i].mode = 'hidden'
+    }
+
+    if (trackIndex === null || trackIndex === undefined) {
+      setActiveSub(null)
+      return
+    }
+
+    const subTrack = subtitleTracks[trackIndex]
+    if (!subTrack || !subTrack.url) {
+      setActiveSub(null)
+      return
+    }
+
+    try {
+      // 1) Fetch VTT content from our proxy endpoint
+      const resp = await fetch(subTrack.url)
+      if (!resp.ok) {
+        console.warn('Subtitle fetch failed:', resp.status, resp.statusText)
+        setActiveSub(null)
+        return
+      }
+      const vttText = await resp.text()
+
+      // 2) Create a blob URL for the VTT content
+      const blob = new Blob([vttText], { type: 'text/vtt' })
+      const blobUrl = URL.createObjectURL(blob)
+      subtitleBlobUrlRef.current = blobUrl
+
+      // 3) Create a <track> element pointing at the blob URL
+      const track = document.createElement('track')
+      track.kind = 'subtitles'
+      track.src = blobUrl
+      track.srclang = subTrack.language || ''
+      track.label = subTrack.label
+      track.default = false
+      v.appendChild(track)
+      subtitleTrackElRef.current = track
+
+      // 4) The browser registers the track asynchronously; set mode
+      //    on the next microtask so the track is in the DOM.
+      queueMicrotask(() => {
+        track.track.mode = 'showing'
+      })
+
+      setActiveSub(trackIndex)
+    } catch (err) {
+      console.warn('Subtitle error:', err)
+      setActiveSub(null)
+    }
+  }, [subtitleTracks])
 
   const disableSubs = useCallback(() => {
     const v = videoRef.current
-    if (!v?.textTracks) return
+    if (!v) return
+
+    cleanupSubtitleTrack()
+
+    // Hide any remaining text tracks
     for (let i = 0; i < v.textTracks.length; i++) {
       v.textTracks[i].mode = 'hidden'
     }
@@ -425,9 +523,12 @@ export default function VideoPlayer({
     const v = videoRef.current
     if (!v) return
 
-    const subs = getSubTracksFromVideo(v)
-    setSubTracks(subs)
+    // Hide text tracks by default, but preserve the active subtitle track
     for (let i = 0; i < v.textTracks.length; i++) {
+      // Don't hide our active subtitle track element
+      if (v.textTracks[i] === (subtitleTrackElRef.current?.track)) {
+        continue
+      }
       v.textTracks[i].mode = 'hidden'
     }
 
@@ -437,14 +538,12 @@ export default function VideoPlayer({
 
     if (switchingAudioRef.current) {
       switchingAudioRef.current = false
-      // hls.js handles the resume seek via startPosition; native/progressive
-      // needs an explicit currentTime set. Always honor pendingPlay — the
-      // audio-switch click is a user gesture, so play() is allowed.
-      if (!usingHls) {
-        const pos = pendingPositionRef.current
-        if (pos !== null && pos > 0) {
-          v.currentTime = pos
-        }
+      // Always seek to the saved position — works for both hls.js and native.
+      // hls.js startPosition only affects initial load, but we still need
+      // to set currentTime to ensure the video element seeks immediately.
+      const pos = pendingPositionRef.current
+      if (pos !== null && pos > 0) {
+        v.currentTime = pos
       }
       if (pendingPlayRef.current) {
         v.play().catch(() => {})
@@ -482,11 +581,16 @@ export default function VideoPlayer({
 
   // ── Report stop + cleanup on unmount ──────────────────────────────────────
 
+  // ── Cleanup on unmount ──────────────────────────────────────────────────
+
   useEffect(() => {
     return () => {
       // Clear any pending gesture/indicator timeouts
       clearTimeout(gestureClearTimerRef.current)
       clearTimeout(gestureIndicatorTimeout.current)
+
+      // Clean up subtitle track (remove <track> element + revoke blob URL)
+      cleanupSubtitleTrack()
 
       const id = itemIdRef.current
       if (!id) return
@@ -582,12 +686,10 @@ export default function VideoPlayer({
 
   const progress = effectiveDuration ? (currentTime / effectiveDuration) * 100 : 0
   const hasAudioChoice = audioTracks.length > 1
-  const hasSubChoice = subTracks.length > 0
+  const hasSubChoice = subtitleTracks.length > 0
 
   const activeAudioLabel = audioTracks[activeAudioIndex]
-    ? audioTracks[activeAudioIndex].language
-      ? `${audioTracks[activeAudioIndex].displayTitle} (${audioTracks[activeAudioIndex].language})`
-      : audioTracks[activeAudioIndex].displayTitle
+    ? audioTracks[activeAudioIndex].language || audioTracks[activeAudioIndex].displayTitle
     : 'Audio'
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -618,18 +720,21 @@ export default function VideoPlayer({
           webkit-playsinline="true"
           autoPlay
           muted={muted}
+          crossOrigin="anonymous"
         >
-          {subTracks.map((t) => (
-            <track
-              key={t.index}
-              kind="subtitles"
-              srcLang={t.language || undefined}
-              label={t.label}
-              default={activeSub === t.index}
-            />
-          ))}
+          {/* Subtitles handled via Blob URL + dynamic <track> (see switchSub) */}
         </video>
       </div>
+
+      {/* Dark overlay for simulated brightness dimming */}
+      {/* Sits on top of the video but behind controls/gesture overlays */}
+      <div
+        className="absolute inset-0 pointer-events-none z-[5]"
+        style={{
+          backgroundColor: `rgba(0,0,0,${dimOpacity})`,
+          transition: 'background-color 0.15s ease-out',
+        }}
+      />
 
       {/* Brightness overlay for click-to-seek on mobile */}
       {mobile && (
@@ -909,12 +1014,9 @@ export default function VideoPlayer({
                                     <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" />
                                   </svg>
                                 )}
-                                <div className={activeAudioIndex === t.index ? '' : 'ml-5'}>
-                                  <span>{t.displayTitle}</span>
-                                  {t.language && (
-                                    <span className="text-zinc-400 ml-1.5 text-xs">{t.language.toUpperCase()}</span>
-                                  )}
-                                </div>
+                                <span className={activeAudioIndex === t.index ? '' : 'ml-5'}>
+                                  {t.language}
+                                </span>
                               </button>
                             ))}
                           </motion.div>
@@ -961,9 +1063,9 @@ export default function VideoPlayer({
                               )}
                               <span className={activeSub === null ? '' : 'ml-5'}>Off</span>
                             </button>
-                            {subTracks.map((t) => (
+                            {subtitleTracks.map((t) => (
                               <button
-                                key={t.id}
+                                key={t.index}
                                 onClick={() => switchSub(t.index)}
                                 className={`w-full text-left px-3 py-2 text-sm flex items-center gap-2 transition-colors ${
                                   activeSub === t.index ? 'text-violet-400 bg-violet-500/10' : 'text-white hover:bg-zinc-800'
@@ -975,7 +1077,7 @@ export default function VideoPlayer({
                                   </svg>
                                 )}
                                 <span className={activeSub === t.index ? '' : 'ml-5'}>
-                                  {t.label}{t.language ? ` (${t.language})` : ''}
+                                  {t.language || t.label}
                                 </span>
                               </button>
                             ))}

@@ -20,6 +20,25 @@ class Settings(BaseSettings):
     # CORS
     FRONTEND_URL: str = "http://localhost:5173"
 
+    # Email / SMTP
+    SMTP_HOST: str = "smtp.gmail.com"
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM_EMAIL: str = ""
+    SMTP_FROM_NAME: str = "StreamX"
+
+    # Public-facing app URL (used in emails for links)
+    APP_URL: str = "http://localhost:5173"
+
+    # Google OAuth
+    GOOGLE_CLIENT_ID: str = ""
+
+    # Razorpay
+    RAZORPAY_KEY_ID: str = ""
+    RAZORPAY_KEY_SECRET: str = ""
+    RAZORPAY_WEBHOOK_SECRET: str = ""
+
     @property
     def jellyfin_library_list(self) -> list[str]:
         return [lid.strip() for lid in self.JELLYFIN_LIBRARY_IDS.split(",") if lid.strip()]

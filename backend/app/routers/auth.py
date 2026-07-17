@@ -1,4 +1,6 @@
+import asyncio
 import logging
+import secrets
 from datetime import datetime, timedelta, timezone
 
 
@@ -12,15 +14,19 @@ def _safe_compare(dt_a, dt_b):
     return strip_tz(dt_a), strip_tz(dt_b)
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from httpx import AsyncClient as HttpxClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import jellyfin as jf
+from app.config import settings
 from app.database import get_db
 from app.dependencies import get_current_user
+from app.email_service import send_password_reset_email, send_welcome_email
 from app.models import User
 from app.schemas import (
     ForgotPasswordRequest,
+    GoogleLoginRequest,
     LoginRequest,
     LoginResponse,
     MessageResponse,
@@ -81,6 +87,21 @@ async def register(payload: RegisterRequest, db: AsyncSession = Depends(get_db))
     db.add(user)
     await db.commit()
     await db.refresh(user)
+
+    # Send welcome email (fire-and-forget — don't delay the registration response)
+    try:
+        trial_end = (now + timedelta(days=7)).strftime("%B %d, %Y")
+        asyncio.create_task(
+            asyncio.to_thread(
+                send_welcome_email,
+                to_email=user.email,
+                username=user.username,
+                trial_end_date=trial_end,
+            )
+        )
+    except Exception as exc:
+        logger.warning("Failed to schedule welcome email for %s: %s", user.email, exc)
+
     return user
 
 
@@ -126,6 +147,177 @@ async def login(payload: LoginRequest, db: AsyncSession = Depends(get_db)):
         jellyfin_user_id=jellyfin_user_id,
         username=user.username,
         email=user.email,
+        avatar_url=user.avatar_url,
+    )
+
+
+# ── Google OAuth ───────────────────────────────────────────────────────────────
+
+async def verify_google_token(credential: str) -> dict:
+    """Verify a Google ID token using Google's tokeninfo endpoint."""
+    try:
+        async with HttpxClient() as client:
+            resp = await client.get(
+                "https://oauth2.googleapis.com/tokeninfo",
+                params={"id_token": credential},
+            )
+            if resp.status_code != 200:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid Google token",
+                )
+            data = resp.json()
+            # Verify the audience (client ID) matches our app
+            if data.get("aud") != settings.GOOGLE_CLIENT_ID:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Token audience mismatch",
+                )
+            return data
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Google token verification failed: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Failed to verify Google token",
+        )
+
+
+@router.post("/google", response_model=LoginResponse)
+async def google_login(
+    payload: GoogleLoginRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Sign in or register with a Google ID token."""
+    # Verify the token with Google
+    google_data = await verify_google_token(payload.credential)
+
+    google_id = google_data["sub"]
+    email = google_data.get("email", "")
+    google_name = google_data.get("name", "")
+    picture = google_data.get("picture", "")
+
+    if not email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Google account has no email",
+        )
+
+    # Look up existing user by google_id or email
+    result = await db.execute(
+        select(User).where(
+            (User.google_id == google_id) | (User.email == email)
+        )
+    )
+    user = result.scalar_one_or_none()
+
+    if user:
+        # Existing user — link google_id if not already linked
+        if not user.google_id:
+            user.google_id = google_id
+        if picture and not user.avatar_url:
+            user.avatar_url = picture
+        await db.commit()
+        await db.refresh(user)
+
+        # Authenticate against Jellyfin using stored jellyfin_password
+        if not user.jellyfin_password:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Jellyfin credentials not configured for this account",
+            )
+
+        try:
+            jf_auth = await jf.authenticate_jellyfin_user(
+                user.username, user.jellyfin_password
+            )
+            jellyfin_token = jf_auth["AccessToken"]
+            jellyfin_user_id = jf_auth["User"]["Id"]
+        except Exception as exc:
+            logger.error("Jellyfin auth failed for Google user %s: %s", user.username, exc)
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Media server authentication failed",
+            )
+    else:
+        # New user — create account
+        now = datetime.now(timezone.utc)
+
+        # Derive a unique username from the Google name/email
+        base_username = (
+            google_name.lower().replace(" ", "_").replace("-", "_")[:20]
+            or email.split("@")[0][:20]
+        )
+        # Remove non-alphanumeric characters except underscore/hyphen
+        base_username = "".join(c for c in base_username if c.isalnum() or c in "_-")
+        if not base_username or len(base_username) < 3:
+            base_username = email.split("@")[0][:20]
+
+        # Ensure username is unique
+        username = base_username
+        counter = 1
+        while True:
+            existing = await db.execute(
+                select(User).where(User.username == username)
+            )
+            if not existing.scalar_one_or_none():
+                break
+            username = f"{base_username[:16]}_{counter}"
+            counter += 1
+
+        # Generate random passwords
+        random_password = secrets.token_urlsafe(16)
+        jellyfin_pw = secrets.token_urlsafe(16)
+
+        # Create Jellyfin user
+        try:
+            jf_user = await jf.create_jellyfin_user(username, jellyfin_pw)
+            jellyfin_user_id = jf_user.get("Id")
+        except Exception as exc:
+            logger.error("Jellyfin user creation failed for Google user %s: %s", username, exc)
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Could not create media account. Please try again.",
+            )
+
+        # Persist user
+        user = User(
+            email=email,
+            username=username,
+            hashed_password=hash_password(random_password),
+            jellyfin_user_id=jellyfin_user_id,
+            jellyfin_password=jellyfin_pw,
+            google_id=google_id,
+            avatar_url=picture,
+            subscription_status="trial",
+            trial_started_at=now,
+        )
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+
+        # Authenticate against Jellyfin with the generated password
+        try:
+            jf_auth = await jf.authenticate_jellyfin_user(username, jellyfin_pw)
+            jellyfin_token = jf_auth["AccessToken"]
+        except Exception as exc:
+            logger.error("Jellyfin auth failed for new Google user %s: %s", username, exc)
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Media server authentication failed",
+            )
+
+    # Issue our own JWT
+    access_token = create_access_token({"sub": str(user.id)})
+
+    return LoginResponse(
+        access_token=access_token,
+        jellyfin_token=jellyfin_token,
+        jellyfin_user_id=jellyfin_user_id,
+        username=user.username,
+        email=user.email,
+        avatar_url=user.avatar_url,
     )
 
 
@@ -145,12 +337,16 @@ async def forgot_password(
         user.reset_token_expires = reset_token_expiry()
         await db.commit()
 
-        # TODO: replace with real email transport
-        logger.info(
-            "[MOCK EMAIL] Password reset link for %s: /reset-password?token=%s",
-            user.email,
-            token,
-        )
+        # Send password reset email (user expects to wait a moment)
+        try:
+            await asyncio.to_thread(
+                send_password_reset_email,
+                to_email=user.email,
+                username=user.username,
+                reset_token=token,
+            )
+        except Exception as exc:
+            logger.warning("Failed to send reset email to %s: %s", user.email, exc)
 
     return MessageResponse(
         message="If that email is registered, a reset link has been sent."

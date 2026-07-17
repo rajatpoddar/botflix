@@ -1,0 +1,12 @@
+# Robots.txt for StreamX
+# https://streamx.cabelwala.com
+
+User-agent: *
+Allow: /
+
+# Disallow auth/protected routes that require login
+Disallow: /browse/
+Disallow: /profile
+Disallow: /watch/
+
+Sitemap: https://streamx.cabelwala.com/sitemap.xml

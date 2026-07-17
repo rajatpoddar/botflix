@@ -1,20 +1,22 @@
 import { createContext, useContext, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { authAPI } from '../lib/api'
-import { saveSession, clearSession, isAuthenticated, getUsername } from '../lib/auth'
+import { saveSession, clearSession, isAuthenticated, getUsername, getAvatarUrl } from '../lib/auth'
 
 const AuthContext = createContext(null)
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(() =>
-    isAuthenticated() ? { username: getUsername() } : null
+    isAuthenticated()
+      ? { username: getUsername(), avatar_url: getAvatarUrl() }
+      : null
   )
   const navigate = useNavigate()
 
   const login = useCallback(async (credentials) => {
     const { data } = await authAPI.login(credentials)
     saveSession(data)
-    setUser({ username: data.username })
+    setUser({ username: data.username, avatar_url: data.avatar_url })
     navigate('/browse')
     return data
   }, [navigate])
@@ -27,8 +29,16 @@ export function AuthProvider({ children }) {
       password: credentials.password,
     })
     saveSession(data)
-    setUser({ username: data.username })
+    setUser({ username: data.username, avatar_url: data.avatar_url })
     navigate('/browse')
+  }, [navigate])
+
+  const googleLogin = useCallback(async (credential) => {
+    const { data } = await authAPI.googleLogin(credential)
+    saveSession(data)
+    setUser({ username: data.username, avatar_url: data.avatar_url })
+    navigate('/browse')
+    return data
   }, [navigate])
 
   const logout = useCallback(() => {
@@ -38,7 +48,7 @@ export function AuthProvider({ children }) {
   }, [navigate])
 
   return (
-    <AuthContext.Provider value={{ user, login, register, logout }}>
+    <AuthContext.Provider value={{ user, login, register, googleLogin, logout }}>
       {children}
     </AuthContext.Provider>
   )

@@ -1,0 +1,36 @@
+{
+  "name": "StreamX — Premium Personal Media Streaming",
+  "short_name": "StreamX",
+  "description": "StreamX brings a premium Netflix-style streaming experience to your personal Jellyfin media library.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#09090b",
+  "theme_color": "#09090b",
+  "categories": ["entertainment", "video", "media"],
+  "lang": "en-IN",
+  "dir": "ltr",
+  "icons": [
+    {
+      "src": "/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ],
+  "screenshots": [],
+  "prefer_related_applications": false,
+  "related_applications": []
+}

@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { mediaAPI, getProxiedImageUrl } from '../lib/api'
+import { useDownloads } from '../contexts/DownloadContext'
 import Navbar from '../components/layout/Navbar'
 import MediaCarousel from '../components/media/MediaCarousel'
 
@@ -34,9 +35,13 @@ export default function MovieDetailPage() {
   const [movie, setMovie] = useState(null)
   const [similar, setSimilar] = useState([])
   const [loading, setLoading] = useState(true)
-  const [downloading, setDownloading] = useState(false)
   const [error, setError] = useState('')
   const [favorite, setFavorite] = useState(false)
+  const { startDownload, downloads } = useDownloads()
+
+  const downloadItem = downloads.find((d) => d.id === id)
+  const isDownloading = downloadItem?.status === 'downloading'
+  const isDownloaded = downloadItem?.status === 'completed'
 
   useEffect(() => {
     async function load() {
@@ -78,17 +83,12 @@ export default function MovieDetailPage() {
   }, [favorite, id])
 
   async function handleDownload() {
-    if (downloading || !movie) return
-    setDownloading(true)
-    try {
-      const res = await mediaAPI.getDownloadUrl(id)
-      const { download_url } = res.data
-      window.open(download_url, '_blank')
-    } catch (err) {
-      console.error('Download failed', err)
-    } finally {
-      setTimeout(() => setDownloading(false), 2000)
+    if (!movie || isDownloading) return
+    if (isDownloaded) {
+      navigate('/browse/downloads')
+      return
     }
+    startDownload(movie)
   }
 
   if (loading) {
@@ -243,13 +243,22 @@ export default function MovieDetailPage() {
             )}
             <button
               onClick={handleDownload}
-              disabled={downloading}
-              className="flex items-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-white font-semibold px-6 py-3.5 rounded-xl transition-colors border border-zinc-700 disabled:opacity-50"
+              disabled={isDownloading}
+              className={`flex items-center gap-2 text-white font-semibold px-6 py-3.5 rounded-xl transition-all border ${
+                isDownloaded
+                  ? 'bg-emerald-600/20 border-emerald-700 hover:bg-emerald-600/30 text-emerald-400'
+                  : 'bg-zinc-800 hover:bg-zinc-700 border-zinc-700 disabled:opacity-50'
+              }`}
             >
-              {downloading ? (
+              {isDownloading ? (
                 <svg className="animate-spin w-5 h-5" viewBox="0 0 24 24" fill="none">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                </svg>
+              ) : isDownloaded ? (
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                    d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
               ) : (
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -257,7 +266,11 @@ export default function MovieDetailPage() {
                     d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                 </svg>
               )}
-              {downloading ? 'Starting…' : 'Download'}
+              {isDownloading
+                ? `Downloading ${downloadItem?.progress || 0}%`
+                : isDownloaded
+                  ? 'Downloaded'
+                  : 'Download'}
             </button>
           </div>
         </div>

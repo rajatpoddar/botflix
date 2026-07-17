@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { mediaAPI, getPublicImageUrl } from '../lib/api'
+import PosterCollage from '../components/media/PosterCollage'
 
 const features = [
   {
@@ -52,73 +53,6 @@ const faqs = [
   { q: 'Can I cancel anytime?', a: 'Absolutely. There are no contracts or commitments. Cancel anytime — your access continues until the end of your billing period.' },
   { q: 'What devices are supported?', a: 'StreamX works on any modern browser — desktop, tablet, and mobile. No app downloads needed.' },
 ]
-
-function PosterCollage({ items = [] }) {
-  // Need at least a few items for a good collage effect
-  if (items.length < 4) return null
-
-  // Create rows of posters with staggered animation
-  const rowCount = 4
-  const postersPerRow = Math.ceil(items.length / rowCount)
-  const rows = []
-  for (let i = 0; i < rowCount; i++) {
-    rows.push(items.slice(i * postersPerRow, (i + 1) * postersPerRow))
-  }
-
-  return (
-    <div className="absolute inset-0 overflow-hidden">
-      {/* Dark gradient overlays for edges */}
-      <div className="absolute inset-0 z-[3] bg-gradient-to-r from-zinc-950 via-transparent to-zinc-950" />
-      <div className="absolute inset-0 z-[3] bg-gradient-to-t from-zinc-950 via-zinc-950/60 to-zinc-950/80" />
-
-      <div className="absolute inset-0 flex flex-col gap-3 sm:gap-4 opacity-40 scale-110">
-        {rows.map((row, rowIdx) => (
-          <motion.div
-            key={rowIdx}
-            className="flex gap-3 sm:gap-4"
-            initial={{ x: rowIdx % 2 === 0 ? '-5%' : '5%' }}
-            animate={{
-              x: rowIdx % 2 === 0 ? ['-5%', '-15%', '-5%'] : ['5%', '15%', '5%'],
-            }}
-            transition={{
-              duration: 20 + rowIdx * 3,
-              repeat: Infinity,
-              ease: 'linear',
-            }}
-          >
-            {row.map((item) => (
-              <div
-                key={item.Id}
-                className="flex-shrink-0 w-28 sm:w-36 aspect-[2/3] rounded-lg overflow-hidden shadow-lg"
-              >
-                <img
-                  src={getPublicImageUrl(item.Id, 'Primary', 200, 80)}
-                  alt=""
-                  className="w-full h-full object-cover"
-                  loading="lazy"
-                />
-              </div>
-            ))}
-            {/* Duplicate for seamless scroll */}
-            {row.map((item) => (
-              <div
-                key={`dup-${item.Id}`}
-                className="flex-shrink-0 w-28 sm:w-36 aspect-[2/3] rounded-lg overflow-hidden shadow-lg"
-              >
-                <img
-                  src={getPublicImageUrl(item.Id, 'Primary', 200, 80)}
-                  alt=""
-                  className="w-full h-full object-cover"
-                  loading="lazy"
-                />
-              </div>
-            ))}
-          </motion.div>
-        ))}
-      </div>
-    </div>
-  )
-}
 
 function Top10Card({ item, rank, onClick }) {
   return (
@@ -483,12 +417,113 @@ export default function LandingPage() {
       </section>
 
       {/* ── Footer ── */}
-      <footer className="border-t border-zinc-800 py-8">
-        <div className="max-w-7xl mx-auto px-4 text-center text-sm text-zinc-600">
-          <span className="text-lg font-black tracking-tight">
-            STREAM<span className="text-violet-500">X</span>
-          </span>
-          <p className="mt-2">© {new Date().getFullYear()} StreamX. All rights reserved.</p>
+      <footer className="border-t border-zinc-800/80 bg-gradient-to-b from-zinc-950 to-zinc-950/95">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
+            {/* Brand */}
+            <div className="sm:col-span-2 lg:col-span-1">
+              <span className="text-xl font-black tracking-tight">
+                STREAM<span className="text-violet-500">X</span>
+              </span>
+              <p className="mt-3 text-sm text-zinc-500 leading-relaxed max-w-xs">
+                Premium streaming interface for your personal media library. Exclusively for
+                users of{' '}
+                <a href="https://nregabot.com" target="_blank" rel="noopener noreferrer"
+                  className="text-violet-400 hover:text-violet-300 transition-colors underline underline-offset-2"
+                >
+                  nregabot.com
+                </a>.
+              </p>
+              <a
+                href="mailto:streamxcabelwala@gmail.com"
+                className="inline-flex items-center gap-2 mt-4 text-sm text-zinc-500 hover:text-zinc-300 transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                    d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                </svg>
+                streamxcabelwala@gmail.com
+              </a>
+            </div>
+
+            {/* Quick Links */}
+            <div>
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-4">Quick Links</h3>
+              <ul className="space-y-2.5">
+                <li>
+                  <Link to="/" className="text-sm text-zinc-400 hover:text-white transition-colors">Home</Link>
+                </li>
+                <li>
+                  <Link to="/login" className="text-sm text-zinc-400 hover:text-white transition-colors">Sign In</Link>
+                </li>
+                <li>
+                  <Link to="/signup" className="text-sm text-zinc-400 hover:text-white transition-colors">Get Started</Link>
+                </li>
+                <li>
+                  <a href="https://nregabot.com" target="_blank" rel="noopener noreferrer"
+                    className="text-sm text-zinc-400 hover:text-white transition-colors"
+                  >
+                    nregabot.com
+                  </a>
+                </li>
+              </ul>
+            </div>
+
+            {/* Legal */}
+            <div>
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-4">Legal</h3>
+              <ul className="space-y-2.5">
+                <li>
+                  <Link to="/terms-of-service" className="text-sm text-zinc-400 hover:text-white transition-colors">Terms of Service</Link>
+                </li>
+                <li>
+                  <Link to="/privacy-policy" className="text-sm text-zinc-400 hover:text-white transition-colors">Privacy Policy</Link>
+                </li>
+                <li>
+                  <Link to="/refund-policy" className="text-sm text-zinc-400 hover:text-white transition-colors">Refund & Cancellation</Link>
+                </li>
+                <li>
+                  <Link to="/about" className="text-sm text-zinc-400 hover:text-white transition-colors">About Us</Link>
+                </li>
+              </ul>
+            </div>
+
+            {/* Payment Partners */}
+            <div>
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-4">Payment Partners</h3>
+              <div className="flex items-center gap-3">
+                <a href="https://razorpay.com" target="_blank" rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-800 hover:border-zinc-700 transition-colors group"
+                >
+                  <svg className="w-5 h-5 text-zinc-400 group-hover:text-violet-400 transition-colors" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" />
+                  </svg>
+                  <span className="text-xs font-medium text-zinc-400 group-hover:text-white transition-colors">Razorpay</span>
+                </a>
+              </div>
+              <p className="mt-3 text-xs text-zinc-600 leading-relaxed">
+                All payments are securely processed by Razorpay. We never store your card details.
+              </p>
+            </div>
+          </div>
+
+          {/* Divider */}
+          <div className="mt-10 pt-6 border-t border-zinc-800/50 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <p className="text-xs text-zinc-600">
+              © {new Date().getFullYear()} StreamX by{' '}
+              <a href="https://nregabot.com" target="_blank" rel="noopener noreferrer"
+                className="text-zinc-500 hover:text-zinc-300 transition-colors"
+              >
+                CabelWala
+              </a>. All rights reserved.
+            </p>
+            <div className="flex items-center gap-4 text-xs text-zinc-600">
+              <Link to="/terms-of-service" className="hover:text-zinc-400 transition-colors">Terms</Link>
+              <Link to="/privacy-policy" className="hover:text-zinc-400 transition-colors">Privacy</Link>
+              <Link to="/refund-policy" className="hover:text-zinc-400 transition-colors">Refunds</Link>
+              <Link to="/about" className="hover:text-zinc-400 transition-colors">About</Link>
+            </div>
+          </div>
         </div>
       </footer>
     </div>

@@ -161,6 +161,7 @@ async def proxy_video_stream(
     item_id: str,
     audio_stream_index: int | None = Query(default=None),
     token: str | None = Query(default=None),
+    static: bool = Query(default=False),
     range_header: str | None = Header(default=None, alias="range"),
 ):
     """
@@ -171,6 +172,9 @@ async def proxy_video_stream(
     This ensures mobile devices only need to reach our backend,
     not the Jellyfin server directly.
     Supports HTTP Range requests for seeking.
+
+    When static=true, serves the raw file (Jellyfin sends Content-Length).
+    Used for downloads where real progress tracking is needed.
     """
     from app.config import settings
     from app.security import decode_access_token
@@ -184,13 +188,14 @@ async def proxy_video_stream(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
 
     # ── Build Jellyfin stream URL ───────────────────────────────────────
-    # Use Jellyfin's dynamic streaming endpoint (no static=true) so it can
-    # remux/transcode audio to AAC — browser-compatible for all files.
-    # static=true would serve the raw file as-is, breaking audio for files
-    # with unsupported audio codecs like AC3, DTS, TrueHD, etc.
+    # By default (static=false): dynamic streaming endpoint remuxes/transcodes
+    # audio to AAC — browser-compatible for all files.
+    # static=true: serves raw file as-is (returns Content-Length for progress).
     # Auth via X-Emby-Authorization header (server API key).
     stream_url = f"{settings.JELLYFIN_SERVER_URL}/Videos/{item_id}/stream"
     params_list = ["AudioCodec=aac", "MaxAudioChannels=2"]
+    if static:
+        params_list = ["static=true"]
     if audio_stream_index is not None:
         params_list.append(f"AudioStreamIndex={audio_stream_index}")
     stream_url += "?" + "&".join(params_list)
@@ -295,6 +300,7 @@ async def get_hls_manifest(
         "PlaySessionId": uuid.uuid4().hex,
         "VideoCodec": "h264",
         "AudioCodec": "aac",
+        "SubtitleCodec": "vtt",
         "VideoBitrate": "8000000",
         "AudioBitrate": "192000",
         "MaxAudioChannels": "2",
@@ -401,6 +407,58 @@ async def get_hls_segment(
     except Exception:
         await client.aclose()
         raise
+
+
+@router.get("/subtitles/{item_id}/{stream_index}")
+async def proxy_subtitles(
+    item_id: str,
+    stream_index: int,
+    token: str | None = Query(default=None),
+):
+    """
+    Proxy subtitle files (VTT) from Jellyfin through our backend.
+    Uses our own JWT token (?token=xxx) for authentication — critical because
+    <track> elements can't send custom headers and the browser may not be able
+    to reach the Jellyfin server directly.
+
+    Tries multiple URL variants since Jellyfin's mediaSourceId may differ from
+    the item ID. First tries item_id as mediaSourceId (most common), and if
+    that fails, tries without mediaSourceId.
+    """
+    from app.config import settings
+    from app.security import decode_access_token
+
+    if not token or not decode_access_token(token):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+
+    headers = _hls_auth_headers()
+
+    # Try multiple subtitle URL formats. The most common is
+    # /Videos/{itemId}/{itemId}/Subtitles/{index}/Stream.vtt
+    # but some items have a different mediaSourceId.
+    urls_to_try = [
+        f"{settings.JELLYFIN_SERVER_URL}/Videos/{item_id}/{item_id}/Subtitles/{stream_index}/Stream.vtt",
+        f"{settings.JELLYFIN_SERVER_URL}/Videos/{item_id}/Subtitles/{stream_index}/Stream.vtt",
+    ]
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        for sub_url in urls_to_try:
+            resp = await client.get(sub_url, headers=headers)
+            if resp.is_success:
+                # Return VTT with proper content type and CORS headers
+                return Response(
+                    content=resp.content,
+                    media_type="text/vtt; charset=utf-8",
+                    headers={
+                        "Access-Control-Allow-Origin": "*",
+                        "Cache-Control": "public, max-age=3600",
+                    },
+                )
+
+    raise HTTPException(
+        status_code=status.HTTP_502_BAD_GATEWAY,
+        detail="Subtitle unavailable",
+    )
 
 
 @router.get("/download-url/{item_id}")

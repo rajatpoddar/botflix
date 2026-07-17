@@ -1,15 +1,23 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import FloatingInput from '../components/ui/FloatingInput'
 import Button from '../components/ui/Button'
-import { authAPI } from '../lib/api'
+import PosterCollage from '../components/media/PosterCollage'
+import { authAPI, mediaAPI } from '../lib/api'
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('')
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [collageItems, setCollageItems] = useState([])
+
+  useEffect(() => {
+    mediaAPI.getLandingData()
+      .then((res) => setCollageItems(res.data?.collage || []))
+      .catch(() => {})
+  }, [])
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -29,16 +37,21 @@ export default function ForgotPasswordPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-zinc-950 px-4">
-      <div className="fixed inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-violet-900/15 rounded-full blur-3xl" />
-      </div>
+    <div className="min-h-screen flex items-center justify-center bg-zinc-950 px-4 relative overflow-hidden">
+      {/* Poster Collage Background */}
+      {collageItems.length > 0 ? (
+        <PosterCollage items={collageItems} />
+      ) : (
+        <div className="fixed inset-0 overflow-hidden pointer-events-none">
+          <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-violet-900/15 rounded-full blur-3xl" />
+        </div>
+      )}
 
       <motion.div
         initial={{ opacity: 0, y: 24 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4 }}
-        className="relative w-full max-w-md"
+        className="relative z-10 w-full max-w-md"
       >
         <div className="mb-8 text-center">
           <span className="text-3xl font-black tracking-tight text-white">
