@@ -81,7 +81,7 @@ export default function PrivacyPolicy() {
               <ul className="list-disc pl-6 mt-2 space-y-2">
                 <li>To provide, maintain, and improve the Service</li>
                 <li>To authenticate your identity and authorize access</li>
-                <li>To send service-related communications (welcome emails, billing receipts, password resets)</li>
+                <li>To send service-related communications (welcome emails, password resets)</li>
                 <li>To personalize your streaming experience (resume playback, recommendations)</li>
                 <li>To detect, prevent, and address technical issues or security breaches</li>
                 <li>To comply with legal obligations</li>
@@ -92,7 +92,7 @@ export default function PrivacyPolicy() {
               <h2 className="text-2xl font-bold text-white mb-4">4. Data Sharing & Disclosure</h2>
               <p>We do not sell, trade, or rent your personal information to third parties. We may share information only in the following circumstances:</p>
               <ul className="list-disc pl-6 mt-2 space-y-2">
-                <li><strong>Service Providers:</strong> Razorpay (payment processing) — limited to payment-related data</li>
+                <li><strong>Service Providers:</strong> We do not share your data with any third-party services.</li>
                 <li><strong>Legal Compliance:</strong> When required by law, court order, or governmental regulation</li>
                 <li><strong>Protection of Rights:</strong> To enforce our Terms of Service or protect against fraud or abuse</li>
               </ul>
@@ -120,7 +120,7 @@ export default function PrivacyPolicy() {
                 <li>All data transmitted between your browser and our servers is encrypted using TLS/SSL</li>
                 <li>Passwords are hashed using bcrypt — we never store plain-text passwords</li>
                 <li>Database access is restricted to authorized services only</li>
-                <li>Payment data is handled entirely by Razorpay's PCI-DSS compliant infrastructure</li>
+
               </ul>
             </section>
 
@@ -147,16 +147,13 @@ export default function PrivacyPolicy() {
                 are necessary for the Service to function properly. We do not use tracking cookies, 
                 advertising cookies, or third-party analytics that collect personal data.
               </p>
-              <p className="mt-4">
-                The Razorpay checkout may set its own cookies during payment processing. Please refer 
-                to Razorpay's privacy policy for details on their cookie usage.
-              </p>
+
             </section>
 
             <section>
               <h2 className="text-2xl font-bold text-white mb-4">9. Third-Party Links</h2>
               <p>
-                The Service may contain links to third-party websites or services (including Razorpay and 
+                The Service may contain links to third-party websites or services (including 
                 nregabot.com). We are not responsible for the privacy practices of these third parties. 
                 We encourage you to review their privacy policies before providing any personal information.
               </p>
