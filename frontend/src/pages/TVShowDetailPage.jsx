@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { mediaAPI, getProxiedImageUrl } from '../lib/api'
 import Navbar from '../components/layout/Navbar'
+import { useDownloads } from '../contexts/DownloadContext'
 
 function getImageUrl(itemId, tag, width = 300) {
   if (!tag) return null
@@ -21,6 +22,58 @@ function formatRuntime(ticks) {
   return h > 0 ? `${h}h ${m}m` : `${m}m`
 }
 
+function EpisodeDownloadButton({ ep, showName }) {
+  const { startDownload, downloads } = useDownloads()
+  const navigate = useNavigate()
+
+  const dlItem = downloads.find((d) => d.id === ep.Id)
+  const isDling = dlItem?.status === 'downloading'
+  const isDled = dlItem?.status === 'completed'
+
+  function handleEpDownload(e) {
+    e.stopPropagation()
+    if (isDling) return
+    if (isDled) {
+      navigate('/browse/downloads')
+      return
+    }
+    startDownload({ ...ep, Type: 'Episode', SeriesName: showName })
+  }
+
+  return (
+    <button
+      onClick={handleEpDownload}
+      disabled={isDling}
+      className="mt-2 flex items-center gap-1.5 text-xs font-medium text-zinc-500 hover:text-violet-400 transition-colors disabled:opacity-50"
+      aria-label={`Download ${ep.Name}`}
+    >
+      {isDling ? (
+        <>
+          <svg className="animate-spin w-3.5 h-3.5" viewBox="0 0 24 24" fill="none">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+          </svg>
+          {dlItem?.progress || 0}%
+        </>
+      ) : isDled ? (
+        <>
+          <svg className="w-3.5 h-3.5 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <span className="text-emerald-500">Downloaded</span>
+        </>
+      ) : (
+        <>
+          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+          </svg>
+          Download
+        </>
+      )}
+    </button>
+  )
+}
+
 export default function TVShowDetailPage() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -31,9 +84,13 @@ export default function TVShowDetailPage() {
   const [episodes, setEpisodes] = useState([])
   const [loading, setLoading] = useState(true)
   const [epLoading, setEpLoading] = useState(false)
-  const [downloading, setDownloading] = useState(false)
   const [error, setError] = useState('')
   const [favorite, setFavorite] = useState(false)
+  const { startDownload, downloads } = useDownloads()
+
+  const downloadItem = downloads.find((d) => d.id === episodes[0]?.Id)
+  const isDownloading = downloadItem?.status === 'downloading'
+  const isDownloaded = downloadItem?.status === 'completed'
 
   // Load show metadata + seasons
   useEffect(() => {
@@ -89,17 +146,12 @@ export default function TVShowDetailPage() {
   }, [favorite, id])
 
   async function handleDownload() {
-    if (downloading) return
-    setDownloading(true)
-    try {
-      const res = await mediaAPI.getDownloadUrl(id)
-      const { download_url } = res.data
-      window.open(download_url, '_blank')
-    } catch (err) {
-      console.error('Download failed', err)
-    } finally {
-      setTimeout(() => setDownloading(false), 2000)
+    if (episodes.length === 0 || isDownloading) return
+    if (isDownloaded) {
+      navigate('/browse/downloads')
+      return
     }
+    startDownload({ ...episodes[0], Type: 'Episode', SeriesName: show?.Name })
   }
 
   if (loading) {
@@ -207,57 +259,52 @@ export default function TVShowDetailPage() {
 
           {/* Action buttons */}
           <div className="mt-4 flex gap-3 flex-wrap">
-            {show?.UserData?.PlaybackPositionTicks > 0 ? (
-              <>
-                <button
-                  onClick={() => navigate(`/watch/${show.Id}`)}
-                  className="flex items-center gap-2 bg-violet-600 hover:bg-violet-500 text-white font-bold px-6 py-2.5 rounded-xl transition-colors shadow-lg shadow-violet-900/30 text-sm"
-                >
-                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M8 5v14l11-7z" />
-                  </svg>
-                  Resume
-                </button>
-                <button
-                  onClick={() => navigate(`/watch/${show.Id}?fresh=1`)}
-                  className="flex items-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-white font-semibold px-5 py-2.5 rounded-xl transition-colors border border-zinc-700 text-sm"
-                >
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                      d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                  </svg>
-                  Start Over
-                </button>
-              </>
-            ) : (
+            <button
+              onClick={() => {
+                if (episodes.length > 0) {
+                  navigate(`/watch/${episodes[0].Id}`)
+                }
+              }}
+              className="flex items-center gap-2 bg-violet-600 hover:bg-violet-500 text-white font-bold px-6 py-2.5 rounded-xl transition-colors shadow-lg shadow-violet-900/30 text-sm"
+            >
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M8 5v14l11-7z" />
+              </svg>
+              {episodes.length > 0 ? `Play ${episodes[0].IndexNumber != null ? `E${episodes[0].IndexNumber} ` : ''}· ${episodes[0].Name}` : 'Play'}
+            </button>
+            {episodes.length > 0 && (
               <button
-                onClick={() => navigate(`/watch/${show.Id}`)}
-                className="flex items-center gap-2 bg-violet-600 hover:bg-violet-500 text-white font-bold px-6 py-2.5 rounded-xl transition-colors shadow-lg shadow-violet-900/30 text-sm"
+                onClick={handleDownload}
+                disabled={isDownloading}
+                className={`flex items-center gap-2 text-white font-semibold px-5 py-2.5 rounded-xl transition-all border text-sm ${
+                  isDownloaded
+                    ? 'bg-emerald-600/20 border-emerald-700 hover:bg-emerald-600/30 text-emerald-400'
+                    : 'bg-zinc-800 hover:bg-zinc-700 border-zinc-700 disabled:opacity-50'
+                }`}
               >
-                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M8 5v14l11-7z" />
-                </svg>
-                Play
+                {isDownloading ? (
+                  <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                  </svg>
+                ) : isDownloaded ? (
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                      d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                ) : (
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                      d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                )}
+                {isDownloading
+                  ? `Downloading ${downloadItem?.progress || 0}%`
+                  : isDownloaded
+                    ? 'Downloaded'
+                    : 'Download Episode'}
               </button>
             )}
-            <button
-              onClick={handleDownload}
-              disabled={downloading}
-              className="flex items-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-white font-semibold px-5 py-2.5 rounded-xl transition-colors border border-zinc-700 disabled:opacity-50 text-sm"
-            >
-              {downloading ? (
-                <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                </svg>
-              ) : (
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                    d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                </svg>
-              )}
-              {downloading ? 'Starting…' : 'Download'}
-            </button>
           </div>
         </div>
       </div>
@@ -299,13 +346,15 @@ export default function TVShowDetailPage() {
               const runtime = formatRuntime(ep.RunTimeTicks)
 
               return (
-                <button
+                <div
                   key={ep.Id}
-                  onClick={() => navigate(`/watch/${ep.Id}`)}
                   className="flex items-start gap-4 p-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 transition-colors text-left group"
                 >
                   {/* Thumbnail */}
-                  <div className="relative flex-shrink-0 w-36 sm:w-44 aspect-video rounded-lg overflow-hidden bg-zinc-800">
+                  <button
+                    onClick={() => navigate(`/watch/${ep.Id}`)}
+                    className="relative flex-shrink-0 w-36 sm:w-44 aspect-video rounded-lg overflow-hidden bg-zinc-800"
+                  >
                     {epImg ? (
                       <img src={epImg} alt="" className="w-full h-full object-cover" />
                     ) : (
@@ -324,14 +373,19 @@ export default function TVShowDetailPage() {
                         </svg>
                       </div>
                     </div>
-                  </div>
+                  </button>
 
                   {/* Episode info */}
                   <div className="flex-1 min-w-0 pt-1">
                     <div className="flex items-start justify-between gap-2">
-                      <p className="text-sm font-semibold text-white">
-                        {ep.IndexNumber != null ? `${ep.IndexNumber}. ` : ''}{ep.Name}
-                      </p>
+                      <button
+                        onClick={() => navigate(`/watch/${ep.Id}`)}
+                        className="text-left"
+                      >
+                        <p className="text-sm font-semibold text-white hover:text-violet-400 transition-colors">
+                          {ep.IndexNumber != null ? `${ep.IndexNumber}. ` : ''}{ep.Name}
+                        </p>
+                      </button>
                       {runtime && (
                         <span className="text-xs text-zinc-500 flex-shrink-0">{runtime}</span>
                       )}
@@ -341,8 +395,10 @@ export default function TVShowDetailPage() {
                         {ep.Overview}
                       </p>
                     )}
+                    {/* Episode download button */}
+                    <EpisodeDownloadButton ep={ep} showName={show?.Name} />
                   </div>
-                </button>
+                </div>
               )
             })}
 

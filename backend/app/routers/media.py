@@ -855,11 +855,9 @@ async def get_landing_data():
     }
 
     async with httpx.AsyncClient(timeout=20) as client:
-        # 1) Fetch movies for poster collage (recently added, limit 20)
+        # 1) Fetch a random mix of movies & shows for poster collage background
         collage_params = {
-            "IncludeItemTypes": "Movie",
-            "SortBy": "DateCreated",
-            "SortOrder": "Descending",
+            "IncludeItemTypes": "Movie,Series",
             "Recursive": True,
             "Limit": 20,
             "Fields": "ImageTags",
@@ -871,10 +869,10 @@ async def get_landing_data():
             headers=headers,
         )
 
-        # 2) Fetch top rated movies for Trending section
+        # 2) Fetch recently added movies & shows for Trending section
         trending_params = {
-            "IncludeItemTypes": "Movie",
-            "SortBy": "CommunityRating",
+            "IncludeItemTypes": "Movie,Series",
+            "SortBy": "DateCreated",
             "SortOrder": "Descending",
             "Recursive": True,
             "Limit": 10,

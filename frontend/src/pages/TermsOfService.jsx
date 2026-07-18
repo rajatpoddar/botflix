@@ -26,6 +26,7 @@ export default function TermsOfService() {
       <nav className="relative z-10 border-b border-zinc-800/50 backdrop-blur-sm">
         <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
           <Link to="/" className="text-2xl font-black tracking-tight">
+            <img src="/logo.png" alt="StreamX" className="w-5 h-5 inline-block mr-1 -mt-0.5" />
             STREAM<span className="text-violet-500">X</span>
           </Link>
           <Link to="/" className="text-sm text-zinc-400 hover:text-white transition-colors">
@@ -91,41 +92,11 @@ export default function TermsOfService() {
             </section>
 
             <section>
-              <h2 className="text-2xl font-bold text-white mb-4">4. Subscriptions & Billing</h2>
-              <p>
-                StreamX operates on a subscription-based model with the following terms:
-              </p>
-              <ul className="list-disc pl-6 mt-2 space-y-2">
-                <li><strong>Free Trial:</strong> New users receive a 7-day free trial with full access to the Service.</li>
-                <li><strong>Subscription Fee:</strong> After the trial, the subscription is ₹49 per month (plus applicable taxes).</li>
-                <li><strong>AutoPay:</strong> Subscriptions are billed automatically at the start of each billing cycle via Razorpay.</li>
-                <li><strong>Price Changes:</strong> We reserve the right to modify pricing with 30 days' prior notice via email.</li>
-              </ul>
-            </section>
-
-            <section>
-              <h2 className="text-2xl font-bold text-white mb-4">5. Cancellation & Refunds</h2>
-              <p>
-                You may cancel your subscription at any time through your account settings. Upon cancellation:
-              </p>
-              <ul className="list-disc pl-6 mt-2 space-y-2">
-                <li>You will continue to have access to the Service until the end of your current billing period.</li>
-                <li>No partial refunds will be issued for the remaining days in the current billing period.</li>
-                <li>Your account will be downgraded to free/trial status at the end of the billing cycle.</li>
-              </ul>
-              <p className="mt-4">
-                If you experience technical issues that prevent access to the Service for more than 48 consecutive hours, 
-                please contact us at <span className="text-violet-400">streamxcabelwala@gmail.com</span> for assistance.
-              </p>
-            </section>
-
-            <section>
-              <h2 className="text-2xl font-bold text-white mb-4">6. Acceptable Use</h2>
+              <h2 className="text-2xl font-bold text-white mb-4">4. Acceptable Use</h2>
               <p>You agree not to:</p>
               <ul className="list-disc pl-6 mt-2 space-y-2">
                 <li>Use the Service for any illegal purpose or in violation of applicable laws</li>
                 <li>Share your account credentials with unauthorized users</li>
-                <li>Attempt to circumvent access controls or subscription restrictions</li>
                 <li>Use automated tools, bots, or scrapers to access the Service</li>
                 <li>Reverse engineer, decompile, or disassemble any aspect of the Service</li>
                 <li>Upload or distribute any malicious code or content</li>
@@ -133,7 +104,7 @@ export default function TermsOfService() {
             </section>
 
             <section>
-              <h2 className="text-2xl font-bold text-white mb-4">7. Intellectual Property</h2>
+              <h2 className="text-2xl font-bold text-white mb-4">5. Intellectual Property</h2>
               <p>
                 The StreamX name, logo, interface design, and software code are proprietary and protected 
                 by applicable intellectual property laws. The Service's interface and technology are owned 
@@ -147,7 +118,7 @@ export default function TermsOfService() {
             </section>
 
             <section>
-              <h2 className="text-2xl font-bold text-white mb-4">8. Limitation of Liability</h2>
+              <h2 className="text-2xl font-bold text-white mb-4">6. Limitation of Liability</h2>
               <p>
                 StreamX is provided "as is" and "as available" without warranties of any kind, either 
                 express or implied. We do not guarantee that the Service will be uninterrupted, secure, 
@@ -160,7 +131,7 @@ export default function TermsOfService() {
             </section>
 
             <section>
-              <h2 className="text-2xl font-bold text-white mb-4">9. Changes to Terms</h2>
+              <h2 className="text-2xl font-bold text-white mb-4">7. Changes to Terms</h2>
               <p>
                 We reserve the right to modify these Terms at any time. Changes will be effective immediately 
                 upon posting. We will notify users of material changes via email. Continued use of the Service 
@@ -169,7 +140,7 @@ export default function TermsOfService() {
             </section>
 
             <section>
-              <h2 className="text-2xl font-bold text-white mb-4">10. Contact Information</h2>
+              <h2 className="text-2xl font-bold text-white mb-4">8. Contact Information</h2>
               <p>
                 For questions, concerns, or support regarding these Terms, please contact us at:
               </p>

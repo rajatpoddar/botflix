@@ -77,31 +77,6 @@ class UserOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
-# ── Subscription ──────────────────────────────────────────────────────────────
-
-class SubscriptionStatus(BaseModel):
-    status: str  # 'trial' | 'active' | 'expired' | 'cancelled'
-    trial_started_at: datetime | None = None
-    subscription_ends_at: datetime | None = None
-    days_remaining: int | None = None
-
-    model_config = {"from_attributes": True}
-
-
-# ── Razorpay / Payments ───────────────────────────────────────────────────────
-
-class RazorpayCreateSubscriptionResponse(BaseModel):
-    subscription_id: str
-    short_url: str
-    status: str
-
-
-class RazorpayVerifyRequest(BaseModel):
-    razorpay_payment_id: str
-    razorpay_subscription_id: str
-    razorpay_signature: str
-
-
 # ── Generic ───────────────────────────────────────────────────────────────────
 
 class MessageResponse(BaseModel):

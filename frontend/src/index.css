@@ -1,5 +1,19 @@
 @import "tailwindcss";
 
+@theme {
+  --color-violet-50: #fef2f2;
+  --color-violet-100: #fee2e2;
+  --color-violet-200: #fecaca;
+  --color-violet-300: #fca5a5;
+  --color-violet-400: #f87171;
+  --color-violet-500: #ef4444;
+  --color-violet-600: #dc2626;
+  --color-violet-700: #b91c1c;
+  --color-violet-800: #991b1b;
+  --color-violet-900: #7f1d1d;
+  --color-violet-950: #450a0a;
+}
+
 @layer base {
   * {
     box-sizing: border-box;

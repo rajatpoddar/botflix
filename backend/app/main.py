@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.routers import auth, media, payments
+from app.routers import auth, media
 
 logging.basicConfig(level=logging.INFO)
 
@@ -27,7 +27,6 @@ app.add_middleware(
 # ── Routers ───────────────────────────────────────────────────────────────────
 app.include_router(auth.router)
 app.include_router(media.router)
-app.include_router(payments.router)
 
 
 @app.get("/health")

@@ -57,6 +57,8 @@ export default function MediaCard({ item }) {
     e.stopPropagation()
     if (item.Type === 'BoxSet') {
       navigate(`/collection/${item.Id}`)
+    } else if (item.Type === 'Series') {
+      navigate(`/show/${item.Id}`)
     } else {
       navigate(`/watch/${item.Id}`)
     }

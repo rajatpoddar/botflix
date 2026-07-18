@@ -24,6 +24,7 @@ export default function PrivacyPolicy() {
       <nav className="relative z-10 border-b border-zinc-800/50 backdrop-blur-sm">
         <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
           <Link to="/" className="text-2xl font-black tracking-tight">
+            <img src="/logo.png" alt="StreamX" className="w-5 h-5 inline-block mr-1 -mt-0.5" />
             STREAM<span className="text-violet-500">X</span>
           </Link>
           <Link to="/" className="text-sm text-zinc-400 hover:text-white transition-colors">
@@ -72,14 +73,6 @@ export default function PrivacyPolicy() {
                 <li>Search queries made within the Service</li>
                 <li>Viewing preferences and settings</li>
               </ul>
-              <h3 className="text-lg font-semibold text-white mt-4 mb-2">Payment Information</h3>
-              <p>
-                All payment processing is handled securely by{' '}
-                <a href="https://razorpay.com" className="text-violet-400 hover:text-violet-300 underline">Razorpay</a>. 
-                We do not store, process, or have access to your full payment card details. Razorpay 
-                collects and processes payment data in accordance with their own privacy policy and 
-                PCI-DSS compliance standards.
-              </p>
             </section>
 
             <section>
@@ -88,7 +81,6 @@ export default function PrivacyPolicy() {
               <ul className="list-disc pl-6 mt-2 space-y-2">
                 <li>To provide, maintain, and improve the Service</li>
                 <li>To authenticate your identity and authorize access</li>
-                <li>To process subscription payments and manage billing</li>
                 <li>To send service-related communications (welcome emails, billing receipts, password resets)</li>
                 <li>To personalize your streaming experience (resume playback, recommendations)</li>
                 <li>To detect, prevent, and address technical issues or security breaches</li>

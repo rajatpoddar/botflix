@@ -61,8 +61,6 @@ export default function VideoPlayer({
   const switchingAudioRef = useRef(false)
   const pendingPositionRef = useRef(null)
   const pendingPlayRef = useRef(false)
-  // Track auto-fullscreen to avoid loops
-  const autoFullscreenDoneRef = useRef(false)
   // Track whether a touch gesture just happened (to prevent unwanted play/pause)
   const wasGestureRef = useRef(false)
   // Ref for playing state — avoids re-attaching event listeners on play/pause
@@ -618,9 +616,10 @@ export default function VideoPlayer({
 
     function onPlay() {
       setPlaying(true)
-      // Auto-fullscreen on mobile (only on first play)
-      if (mobile && !autoFullscreenDoneRef.current && !document.fullscreenElement) {
-        autoFullscreenDoneRef.current = true
+      // Hide start screen on mobile as soon as video actually plays
+      if (mobile) setShowStartScreen(false)
+      // Always enter fullscreen when video plays (both mobile & desktop)
+      if (!document.fullscreenElement) {
         enterFullscreen()
       }
     }
@@ -651,11 +650,6 @@ export default function VideoPlayer({
     const fsc = () => {
       const isFullscreen = !!document.fullscreenElement
       setFullscreen(isFullscreen)
-      // On mobile, hide start screen only when video is playing AND in fullscreen
-      // Use ref to avoid adding `playing` to effect deps (which would re-attach all listeners)
-      if (mobile && isFullscreen && playingRef.current) {
-        setShowStartScreen(false)
-      }
     }
     document.addEventListener('fullscreenchange', fsc)
 

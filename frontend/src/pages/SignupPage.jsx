@@ -121,7 +121,8 @@ export default function SignupPage() {
         className="relative z-10 w-full max-w-md"
       >
         <div className="mb-8 text-center">
-          <span className="text-3xl font-black tracking-tight text-white">
+          <span className="text-3xl font-black tracking-tight text-white inline-flex items-center">
+            <img src="/logo.png" alt="StreamX" className="w-7 h-7 mr-1.5 -mt-0.5" />
             STREAM<span className="text-violet-500">X</span>
           </span>
         </div>

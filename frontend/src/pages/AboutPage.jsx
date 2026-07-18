@@ -24,6 +24,7 @@ export default function AboutPage() {
       <nav className="relative z-10 border-b border-zinc-800/50 backdrop-blur-sm">
         <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
           <Link to="/" className="text-2xl font-black tracking-tight">
+            <img src="/logo.png" alt="StreamX" className="w-5 h-5 inline-block mr-1 -mt-0.5" />
             STREAM<span className="text-violet-500">X</span>
           </Link>
           <Link to="/" className="text-sm text-zinc-400 hover:text-white transition-colors">
@@ -93,7 +94,6 @@ export default function AboutPage() {
                 <li>Modern React frontend with responsive design for all screen sizes</li>
                 <li>Secure authentication with encrypted password storage (bcrypt)</li>
                 <li>HTTPS/SSL encryption for all data in transit</li>
-                <li>Razorpay-powered subscription billing with AutoPay</li>
               </ul>
             </section>
 

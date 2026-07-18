@@ -32,10 +32,6 @@ export const authAPI = {
   forgotPassword: (email) => api.post('/auth/forgot-password', { email }),
   resetPassword: (token, new_password) =>
     api.post('/auth/reset-password', { token, new_password }),
-  // ── Subscription ───────────────────────────────────────────────────────
-  getSubscription: () => api.get('/auth/subscription'),
-  startTrial: () => api.post('/auth/subscription/start-trial'),
-  activateSubscription: () => api.post('/auth/subscription/activate'),
 }
 
 // ── Media ─────────────────────────────────────────────────────────────────────

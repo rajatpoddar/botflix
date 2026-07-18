@@ -56,7 +56,8 @@ export default function Navbar() {
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
           <Link to="/browse" className="flex-shrink-0">
-            <span className="text-2xl font-black tracking-tight text-white">
+            <span className="text-2xl font-black tracking-tight text-white inline-flex items-center">
+              <img src="/logo.png" alt="StreamX" className="w-6 h-6 mr-1.5 -mt-0.5" />
               STREAM<span className="text-violet-500">X</span>
             </span>
           </Link>

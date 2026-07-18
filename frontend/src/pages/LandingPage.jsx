@@ -48,10 +48,10 @@ const features = [
 ]
 
 const faqs = [
-  { q: 'What is StreamX?', a: 'StreamX is a premium streaming platform that brings you thousands of movies and TV shows from your personal Jellyfin media server, all in one beautiful interface.' },
-  { q: 'How does the free trial work?', a: 'New users get 7 days of full access completely free. No payment required to start. After your trial ends, it\'s just ₹49/month to continue.' },
-  { q: 'Can I cancel anytime?', a: 'Absolutely. There are no contracts or commitments. Cancel anytime — your access continues until the end of your billing period.' },
+  { q: 'What is StreamX?', a: 'StreamX is a free streaming platform that brings you thousands of movies and TV shows from your personal Jellyfin media server, all in one beautiful interface.' },
+  { q: 'Is StreamX really free?', a: 'Yes! StreamX is completely free for all authorized users of nregabot.com. There are no subscription fees, no hidden charges, and no payment required — ever.' },
   { q: 'What devices are supported?', a: 'StreamX works on any modern browser — desktop, tablet, and mobile. No app downloads needed.' },
+  { q: 'Do I need a Jellyfin server?', a: 'Your StreamX account is linked to a private Jellyfin media server. If you\'re an authorized user of nregabot.com, everything is set up for you automatically.' },
 ]
 
 function Top10Card({ item, rank, onClick }) {
@@ -129,8 +129,8 @@ export default function LandingPage() {
     fetchLandingData()
   }, [])
 
-  const scrollToPricing = () => {
-    document.getElementById('pricing')?.scrollIntoView({ behavior: 'smooth' })
+  const scrollToFeatures = () => {
+    document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' })
   }
 
   const collageItems = landingData.collage || []
@@ -150,7 +150,8 @@ export default function LandingPage() {
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
-            <span className="text-2xl font-black tracking-tight">
+            <span className="text-2xl font-black tracking-tight inline-flex items-center">
+              <img src="/logo.png" alt="StreamX" className="w-6 h-6 mr-1.5 -mt-0.5" />
               STREAM<span className="text-violet-500">X</span>
             </span>
             <div className="flex items-center gap-3">
@@ -200,7 +201,7 @@ export default function LandingPage() {
               <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" />
               </svg>
-              Unlimited streaming. Zero ads.
+              Unlimited streaming. Zero cost. Zero ads.
             </div>
 
             <h1 className="text-4xl sm:text-6xl lg:text-7xl font-black tracking-tight leading-tight drop-shadow-lg">
@@ -210,11 +211,9 @@ export default function LandingPage() {
               </span>
               <br />
               At Your Fingertips
-            </h1>
-
-            <p className="mt-6 text-lg sm:text-xl text-zinc-300 max-w-2xl mx-auto leading-relaxed drop-shadow-md">
-              Stream your personal media collection from anywhere. Start your{' '}
-              <span className="text-white font-semibold">7-day free trial</span> today.
+            </h1>              <p className="mt-6 text-lg sm:text-xl text-zinc-300 max-w-2xl mx-auto leading-relaxed drop-shadow-md">
+              Stream your personal media collection from anywhere —
+              <span className="text-white font-semibold"> completely free</span>.
             </p>
 
             <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
@@ -222,17 +221,15 @@ export default function LandingPage() {
                 onClick={() => navigate('/signup')}
                 className="bg-violet-600 hover:bg-violet-500 text-white font-bold px-10 py-4 rounded-xl text-lg transition-all shadow-xl shadow-violet-900/30 hover:shadow-violet-900/50 active:scale-95"
               >
-                Start Free Trial
+                Get Started Free
               </button>
               <button
-                onClick={scrollToPricing}
+                onClick={scrollToFeatures}
                 className="bg-zinc-800/80 hover:bg-zinc-700 text-white font-semibold px-10 py-4 rounded-xl text-lg border border-zinc-700 transition-all active:scale-95 backdrop-blur-sm"
               >
-                See Plans
+                Learn More
               </button>
             </div>
-
-            <p className="mt-4 text-xs text-zinc-500">No credit card required. Cancel anytime.</p>
           </motion.div>
         </div>
 
@@ -260,7 +257,7 @@ export default function LandingPage() {
             >
               <div className="flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full bg-violet-500 animate-pulse" />
-                <h2 className="text-2xl sm:text-3xl font-black tracking-tight">Top 10 Trending</h2>
+                <h2 className="text-2xl sm:text-3xl font-black tracking-tight">Recently Added</h2>
               </div>
               <div className="hidden sm:flex-1 sm:flex h-px bg-gradient-to-r from-zinc-800 to-transparent" />
             </motion.div>
@@ -281,7 +278,7 @@ export default function LandingPage() {
       )}
 
       {/* ── Features ── */}
-      <section className="relative py-24 sm:py-32">
+      <section id="features" className="relative py-24 sm:py-32">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <motion.div
             initial={{ opacity: 0, y: 30 }}
@@ -316,67 +313,7 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ── Pricing ── */}
-      <section id="pricing" className="relative py-24 sm:py-32 bg-gradient-to-b from-transparent via-violet-950/10 to-transparent">
-        <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
-          <motion.div
-            initial={{ opacity: 0, y: 30 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, margin: '-100px' }}
-            className="text-center mb-12"
-          >
-            <h2 className="text-3xl sm:text-4xl font-bold">Simple Pricing</h2>
-            <p className="mt-4 text-zinc-400">One plan. No hidden fees. Cancel anytime.</p>
-          </motion.div>
 
-          <motion.div
-            initial={{ opacity: 0, y: 30 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, margin: '-50px' }}
-            className="relative rounded-3xl border border-violet-500/30 bg-gradient-to-b from-violet-950/30 to-zinc-950/80 p-8 sm:p-10 shadow-2xl shadow-violet-900/20"
-          >
-            <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-4 py-1 rounded-full bg-violet-600 text-white text-xs font-semibold">
-              MOST POPULAR
-            </div>
-
-            <div className="text-center">
-              <h3 className="text-xl font-bold mb-2">Premium Plan</h3>
-              <div className="flex items-baseline justify-center gap-1 mt-4">
-                <span className="text-5xl font-black">₹49</span>
-                <span className="text-zinc-400">/month</span>
-              </div>
-              <p className="mt-4 text-sm text-zinc-400">
-                Start with a <span className="text-violet-400 font-semibold">7-day free trial</span>. No credit card required.
-              </p>
-            </div>
-
-            <ul className="mt-8 space-y-4">
-              {[
-                'Unlimited movies & TV shows',
-                'Resume watching on any device',
-                '4K & HDR streaming',
-                'Download for offline viewing',
-                'No ads — ever',
-              ].map((item, i) => (
-                <li key={i} className="flex items-center gap-3 text-sm text-zinc-300">
-                  <svg className="w-5 h-5 text-violet-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                  {item}
-                </li>
-              ))}
-            </ul>
-
-            <button
-              onClick={() => navigate('/signup')}
-              className="mt-8 w-full bg-violet-600 hover:bg-violet-500 text-white font-bold py-4 rounded-xl text-lg transition-all active:scale-95"
-            >
-              Start Your Free Trial
-            </button>
-            <p className="mt-3 text-xs text-zinc-600 text-center">Cancel anytime during trial — no charge.</p>
-          </motion.div>
-        </div>
-      </section>
 
       {/* ── FAQ ── */}
       <section className="py-24 sm:py-32">
@@ -405,7 +342,7 @@ export default function LandingPage() {
             Ready to watch?
           </h2>
           <p className="text-zinc-400 mb-8">
-            Start your 7-day free trial today. No commitment, no risk.
+            Sign up today and start watching instantly — no payment needed.
           </p>
           <button
             onClick={() => navigate('/signup')}
@@ -422,7 +359,8 @@ export default function LandingPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
             {/* Brand */}
             <div className="sm:col-span-2 lg:col-span-1">
-              <span className="text-xl font-black tracking-tight">
+              <span className="text-xl font-black tracking-tight inline-flex items-center">
+                <img src="/logo.png" alt="StreamX" className="w-5 h-5 mr-1.5 -mt-0.5" />
                 STREAM<span className="text-violet-500">X</span>
               </span>
               <p className="mt-3 text-sm text-zinc-500 leading-relaxed max-w-xs">
@@ -488,22 +426,25 @@ export default function LandingPage() {
               </ul>
             </div>
 
-            {/* Payment Partners */}
+            {/* Connect */}
             <div>
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-4">Payment Partners</h3>
-              <div className="flex items-center gap-3">
-                <a href="https://razorpay.com" target="_blank" rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-800 hover:border-zinc-700 transition-colors group"
-                >
-                  <svg className="w-5 h-5 text-zinc-400 group-hover:text-violet-400 transition-colors" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" />
-                  </svg>
-                  <span className="text-xs font-medium text-zinc-400 group-hover:text-white transition-colors">Razorpay</span>
-                </a>
-              </div>
-              <p className="mt-3 text-xs text-zinc-600 leading-relaxed">
-                All payments are securely processed by Razorpay. We never store your card details.
-              </p>
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-4">Connect</h3>
+              <ul className="space-y-2.5">
+                <li>
+                  <a href="https://nregabot.com" target="_blank" rel="noopener noreferrer"
+                    className="text-sm text-zinc-400 hover:text-white transition-colors"
+                  >
+                    nregabot.com
+                  </a>
+                </li>
+                <li>
+                  <a href="mailto:streamxcabelwala@gmail.com"
+                    className="text-sm text-zinc-400 hover:text-white transition-colors"
+                  >
+                    Contact Us
+                  </a>
+                </li>
+              </ul>
             </div>
           </div>
 

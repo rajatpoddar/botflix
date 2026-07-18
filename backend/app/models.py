@@ -21,16 +21,6 @@ class User(Base):
     reset_token: Mapped[str | None] = mapped_column(String(255), nullable=True)
     reset_token_expires: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     is_active: Mapped[bool] = mapped_column(default=True)
-    # Subscription
-    subscription_status: Mapped[str] = mapped_column(
-        String(20), default="trial", nullable=False
-    )  # 'trial' | 'active' | 'expired' | 'cancelled'
-    trial_started_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), default=None, nullable=True
-    )
-    subscription_ends_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), default=None, nullable=True
-    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

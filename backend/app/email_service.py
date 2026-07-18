@@ -48,15 +48,14 @@ WELCOME_TEMPLATE = """\
       <div class="header">
         <div class="logo">STREAM<span>X</span></div>
         <h1>Welcome aboard! 🎉</h1>
-        <p class="sub">Your 7-day free trial is ready</p>
+        <p class="sub">Start watching instantly</p>
       </div>
       <div class="content">
         <h2>Hi {username},</h2>
         <p>
           Welcome to <span class="highlight">StreamX</span>! Your account has been
-          created and your <span class="highlight">7-day free trial</span> has
-          started. You now have unlimited access to thousands of movies and TV
-          shows from your personal media library.
+          created and you now have unlimited access to thousands of movies and TV
+          shows from your personal media library — completely free.
         </p>
 
         <div class="features">
@@ -85,8 +84,7 @@ WELCOME_TEMPLATE = """\
         <div class="divider"></div>
 
         <p style="font-size: 13px; color: #71717a;">
-          Your trial ends on <strong style="color: #d4d4d8;">{trial_end}</strong>.
-          After that, it's just ₹49/month to continue. Cancel anytime — no questions asked.
+          StreamX is completely free. Enjoy unlimited access to your personal media library!
         </p>
       </div>
     </div>
@@ -221,13 +219,12 @@ def _send_email(to_email: str, subject: str, html: str) -> bool:
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
-def send_welcome_email(to_email: str, username: str, trial_end_date: str) -> bool:
+def send_welcome_email(to_email: str, username: str) -> bool:
     """Send a welcome email to a newly registered user."""
-    subject = "Welcome to StreamX — Your 7-Day Free Trial Awaits! 🎉"
+    subject = "Welcome to StreamX — Start Watching! 🎉"
     html = WELCOME_TEMPLATE.format(
         username=username,
         app_url=settings.APP_URL,
-        trial_end=trial_end_date,
         from_email=settings.SMTP_FROM_EMAIL,
     )
     return _send_email(to_email, subject, html)
