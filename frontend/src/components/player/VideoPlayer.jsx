@@ -65,6 +65,8 @@ export default function VideoPlayer({
   const autoFullscreenDoneRef = useRef(false)
   // Track whether a touch gesture just happened (to prevent unwanted play/pause)
   const wasGestureRef = useRef(false)
+  // Ref for playing state — avoids re-attaching event listeners on play/pause
+  const playingRef = useRef(false)
   const gestureClearTimerRef = useRef(null)
   // Holds the active hls.js instance (null when using native HLS)
   const hlsRef = useRef(null)
@@ -127,6 +129,7 @@ export default function VideoPlayer({
   const [showControls, setShowControls] = useState(true)
   const [buffering, setBuffering] = useState(false)
   const [showVolume, setShowVolume] = useState(false)
+  const [showStartScreen, setShowStartScreen] = useState(true) // Hides the initial flash on mobile
 
   // Brightness state (1.0 = normal, ranges 0.3–1.5)
   const [brightness, setBrightness] = useState(1.0)
@@ -162,6 +165,7 @@ export default function VideoPlayer({
   }, [playing])
 
   const seek = useCallback((e) => {
+    e.stopPropagation()
     const v = videoRef.current
     const dur = effectiveDuration
     if (!v || !dur) return
@@ -603,6 +607,9 @@ export default function VideoPlayer({
     }
   }, [])
 
+  // Sync playingRef with playing state (not inside the effect to avoid deps)
+  playingRef.current = playing
+
   // ── Event listeners ───────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -632,12 +639,24 @@ export default function VideoPlayer({
       },
       durationchange: () => setDuration(v.duration),
       waiting: () => setBuffering(true),
-      canplay: () => { setBuffering(false) },
+      canplay: () => {
+        setBuffering(false)
+        // On non-mobile, hide the start screen once playback is ready
+        if (!mobile) setShowStartScreen(false)
+      },
       loadedmetadata: handleLoadedMetadata,
     }
 
     Object.entries(handlers).forEach(([ev, fn]) => v.addEventListener(ev, fn))
-    const fsc = () => setFullscreen(!!document.fullscreenElement)
+    const fsc = () => {
+      const isFullscreen = !!document.fullscreenElement
+      setFullscreen(isFullscreen)
+      // On mobile, hide start screen only when video is playing AND in fullscreen
+      // Use ref to avoid adding `playing` to effect deps (which would re-attach all listeners)
+      if (mobile && isFullscreen && playingRef.current) {
+        setShowStartScreen(false)
+      }
+    }
     document.addEventListener('fullscreenchange', fsc)
 
     return () => {
@@ -645,6 +664,13 @@ export default function VideoPlayer({
       document.removeEventListener('fullscreenchange', fsc)
     }
   }, [sendProgress, handleLoadedMetadata, mobile, enterFullscreen])
+
+  // ── Fallback: auto-hide start screen after 5s (safety net) ───────────────
+  useEffect(() => {
+    if (!showStartScreen) return
+    const timer = setTimeout(() => setShowStartScreen(false), 5000)
+    return () => clearTimeout(timer)
+  }, [showStartScreen])
 
   // ── Auto-hide controls ────────────────────────────────────────────────────
 
@@ -830,6 +856,75 @@ export default function VideoPlayer({
         )}
       </AnimatePresence>
 
+      {/* Starting loading screen – hides the initial flash on mobile */}
+      <AnimatePresence>
+        {mobile && showStartScreen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0, transition: { duration: 0.3 } }}
+            className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black"
+          >
+            {/* Background gradient */}
+            <div className="absolute inset-0 bg-gradient-to-t from-violet-950/40 via-transparent to-black/60" />
+
+            {/* Video title */}
+            {title && (
+              <motion.h1
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.1, duration: 0.5 }}
+                className="text-white text-lg font-semibold text-center px-8 relative z-10"
+              >
+                {title}
+              </motion.h1>
+            )}
+
+            {/* Animated loading indicator */}
+            <div className="relative z-10 mt-8 flex flex-col items-center gap-4">
+              {/* Pulsing rings */}
+              <div className="relative w-16 h-16">
+                <motion.div
+                  className="absolute inset-0 rounded-full border-2 border-violet-500/40"
+                  animate={{ scale: [1, 1.4, 1], opacity: [0.6, 0, 0.6] }}
+                  transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+                />
+                <motion.div
+                  className="absolute inset-0 rounded-full border-2 border-violet-400/60"
+                  animate={{ scale: [1, 1.2, 1], opacity: [0.8, 0.2, 0.8] }}
+                  transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut', delay: 0.3 }}
+                />
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <svg className="w-7 h-7 text-violet-400" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M8 5v14l11-7z" />
+                  </svg>
+                </div>
+              </div>
+
+              {/* Status text */}
+              <motion.p
+                initial={{ opacity: 0 }}
+                animate={{ opacity: [0.5, 1, 0.5] }}
+                transition={{ duration: 1.5, repeat: Infinity, ease: 'easeInOut' }}
+                className="text-zinc-400 text-sm font-medium"
+              >
+                Preparing your video…
+              </motion.p>
+            </div>
+
+            {/* Bottom hint */}
+            <motion.p
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.5 }}
+              transition={{ delay: 0.8 }}
+              className="absolute bottom-12 text-zinc-600 text-xs text-center px-8"
+            >
+              Your video will start shortly
+            </motion.p>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Controls overlay */}
       <AnimatePresence>
         {showControls && (
@@ -837,9 +932,23 @@ export default function VideoPlayer({
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
             className="absolute inset-0 flex flex-col justify-between z-40"
+            onClick={mobile ? (e) => {
+              // Only toggle play when tapping the overlay background,
+              // not when tapping a button or interactive element inside it
+              if (!e.target.closest('button') && !e.target.closest('input') && !e.target.closest('[role="menuitem"]')) {
+                togglePlay()
+                resetControlsTimer()
+              }
+            } : undefined}
           >
-            {/* Top bar */}
-            <div className="bg-gradient-to-b from-black/70 to-transparent px-4 py-4 flex items-center gap-4">
+            {/* Top bar — safe-area-aware padding for notched devices */}
+            <div
+              className="bg-gradient-to-b from-black/70 to-transparent px-4 flex items-center gap-4"
+              style={{
+                paddingTop: 'max(env(safe-area-inset-top, 0px), 1rem)',
+                paddingBottom: '1rem',
+              }}
+            >
               {onBack && (
                 <button onClick={onBack} className="p-2 text-white hover:text-zinc-300 transition-colors">
                   <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
