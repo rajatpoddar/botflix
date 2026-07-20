@@ -259,19 +259,41 @@ export default function TVShowDetailPage() {
 
           {/* Action buttons */}
           <div className="mt-4 flex gap-3 flex-wrap">
-            <button
-              onClick={() => {
-                if (episodes.length > 0) {
-                  navigate(`/watch/${episodes[0].Id}`)
-                }
-              }}
-              className="flex items-center gap-2 bg-violet-600 hover:bg-violet-500 text-white font-bold px-6 py-2.5 rounded-xl transition-colors shadow-lg shadow-violet-900/30 text-sm"
-            >
-              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M8 5v14l11-7z" />
-              </svg>
-              {episodes.length > 0 ? `Play ${episodes[0].IndexNumber != null ? `E${episodes[0].IndexNumber} ` : ''}· ${episodes[0].Name}` : 'Play'}
-            </button>
+            {episodes.length > 0 ? (
+              episodes[0]?.UserData?.PlaybackPositionTicks > 0 ? (
+                <>
+                  <button
+                    onClick={() => navigate(`/watch/${episodes[0].Id}`)}
+                    className="flex items-center gap-2 bg-violet-600 hover:bg-violet-500 text-white font-bold px-6 py-2.5 rounded-xl transition-colors shadow-lg shadow-violet-900/30 text-sm"
+                  >
+                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M8 5v14l11-7z" />
+                    </svg>
+                    {`Resume ${episodes[0].IndexNumber != null ? `E${episodes[0].IndexNumber} ` : ''}· ${episodes[0].Name}`}
+                  </button>
+                  <button
+                    onClick={() => navigate(`/watch/${episodes[0].Id}?fresh=1`)}
+                    className="flex items-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-white font-semibold px-4 py-2.5 rounded-xl transition-colors border border-zinc-700 text-sm"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    Start Over
+                  </button>
+                </>
+              ) : (
+                <button
+                  onClick={() => navigate(`/watch/${episodes[0].Id}`)}
+                  className="flex items-center gap-2 bg-violet-600 hover:bg-violet-500 text-white font-bold px-6 py-2.5 rounded-xl transition-colors shadow-lg shadow-violet-900/30 text-sm"
+                >
+                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M8 5v14l11-7z" />
+                  </svg>
+                  {`Play ${episodes[0].IndexNumber != null ? `E${episodes[0].IndexNumber} ` : ''}· ${episodes[0].Name}`}
+                </button>
+              )
+            ) : null}
             {episodes.length > 0 && (
               <button
                 onClick={handleDownload}

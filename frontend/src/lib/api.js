@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { clearSession } from './auth'
 
 const BASE_URL = import.meta.env.VITE_API_URL || ''
 
@@ -16,10 +17,18 @@ api.interceptors.request.use((config) => {
   return config
 })
 
-// Don't auto-logout on 401 — user stays logged in until they manually log out.
+// On 401 (Unauthorized), clear the session so the app doesn't show empty
+// content with a stale/expired token. The user will be redirected to the
+// login page by whichever component checks isAuthenticated().
 api.interceptors.response.use(
   (res) => res,
   (err) => {
+    if (err.response?.status === 401) {
+      clearSession()
+      // Reload so AuthContext re-initializes to null and ProtectedRoute
+      // redirects to the landing page.
+      window.location.href = '/'
+    }
     return Promise.reject(err)
   }
 )
